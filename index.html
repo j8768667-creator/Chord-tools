@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>cMIDI Studio Utilities</title>
+    <script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --card-bg: #181b22;
+            --accent-color: #6366f1;
+            --accent-hover: #4f46e5;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --border-color: #2e3440;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin: 0 0 0.5rem 0;
+            background: linear-gradient(135deg, #a5b4fc, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p {
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        @media (min-width: 768px) {
+            .container {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        .card h2 {
+            margin: 0;
+            font-size: 1.3rem;
+            color: var(--text-main);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.75rem;
+        }
+
+        .drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 2rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--accent-color);
+            background-color: rgba(99, 102, 241, 0.05);
+        }
+
+        .drop-zone p {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .drop-zone span {
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .control-group label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        select, input[type="range"] {
+            width: 100%;
+            padding: 0.5rem;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-main);
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        select:focus {
+            border-color: var(--accent-color);
+        }
+
+        .btn {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            width: 100%;
+        }
+
+        .btn:hover:not(:disabled) {
+            background-color: var(--accent-hover);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            font-size: 0.85rem;
+            color: var(--accent-color);
+            min-height: 1.2em;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>cMIDI Studio Utilities</h1>
+        <p>Harmonic Extraction & Groove Humanization for Music Producers</p>
+    </header>
+
+    <div class="container">
+
+        <div class="card">
+            <h2>1. Chord Progression "Borrower"</h2>
+            <div class="drop-zone" id="borrower-drop">
+                <p>Drag & Drop complex MIDI file here or <span>browse</span></p>
+                <input type="file" id="borrower-input" accept=".mid,.midi" style="display: none;">
+            </div>
+            <div class="status" id="borrower-status">No file loaded</div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <label for="block-length">Block Length</label>
+                    <select id="block-length">
+                        <option value="4">4-Bar Quantized Block</option>
+                        <option value="8" selected>8-Bar Quantized Block</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="polyphony-threshold">Min Simultaneity (Polyphony)</label>
+                    <select id="polyphony-threshold">
+                        <option value="2">2+ Notes (Include dyads)</option>
+                        <option value="3" selected>3+ Notes (Isolate Triads/Chords)</option>
+                    </select>
+                </div>
+
+                <button class="btn" id="borrower-btn" disabled>Extract & Download Progression</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>2. Groove Humanizer / "De-Quantizer"</h2>
+            <div class="drop-zone" id="humanizer-drop">
+                <p>Drag & Drop quantized MIDI file here or <span>browse</span></p>
+                <input type="file" id="humanizer-input" accept=".mid,.midi" style="display: none;">
+            </div>
+            <div class="status" id="humanizer-status">No file loaded</div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <label for="groove-preset">Groove Preset</label>
+                    <select id="groove-preset">
+                        <option value="mpc">90s MPC Drum Sway (Micro-swing)</option>
+                        <option value="dilla">Lazy Neo-Soul Dilla-Puck (Behind the beat)</option>
+                        <option value="drift">Human Drummer Drift (Natural velocity/time float)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="timing-amount">Timing Variance (ms): <span id="timing-val">15</span>ms</label>
+                    <input type="range" id="timing-amount" min="0" max="50" value="15">
+                </div>
+
+                <div class="control-group">
+                    <label for="velocity-amount">Velocity Randomization: <span id="vel-val">12</span></label>
+                    <input type="range" id="velocity-amount" min="0" max="40" value="12">
+                </div>
+
+                <button class="btn" id="humanizer-btn" disabled>Apply Groove & Download</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Helper Setup for Drag and Drop File Handlers ---
+        function setupDropZone(dropZoneId, inputId, callback) {
+            const dropZone = document.getElementById(dropZoneId);
+            const input = document.getElementById(inputId);
+
+            dropZone.addEventListener('click', () => input.click());
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            });
+
+            ['dragleave', 'drop'].forEach(event => {
+                dropZone.addEventListener(event, () => dropZone.classList.remove('dragover'));
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files.length) {
+                    input.files = e.dataTransfer.files;
+                    callback(e.dataTransfer.files[0]);
+                }
+            });
+
+            input.addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    callback(e.target.files[0]);
+                }
+            });
+        }
+
+        // --- Helper: Download Blob as File ---
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // =========================================================
+        // TOOL 1: CHORD PROGRESSION BORROWER LOGIC
+        // =========================================================
+        let borrowerMidiData = null;
+
+        setupDropZone('borrower-drop', 'borrower-input', async (file) => {
+            const arrayBuffer = await file.arrayBuffer();
+            borrowerMidiData = new Midi(arrayBuffer);
+            document.getElementById('borrower-status').innerText = `Loaded: ${file.name}`;
+            document.getElementById('borrower-btn').disabled = false;
+        });
+
+        document.getElementById('borrower-btn').addEventListener('click', () => {
+            if (!borrowerMidiData) return;
+
+            const minPolyphony = parseInt(document.getElementById('polyphony-threshold').value);
+            const blockBars = parseInt(document.getElementById('block-length').value);
+
+            // Create new MIDI structure
+            const outputMidi = new Midi();
+            outputMidi.header.bpm = borrowerMidiData.header.bpm || 120;
+            const outputTrack = outputMidi.addTrack();
+
+            // Aggregate all notes across tracks
+            let allNotes = [];
+            borrowerMidiData.tracks.forEach(track => {
+                allNotes = allNotes.concat(track.notes);
+            });
+
+            // Bucket notes by start time (quantized to 16th notes for structure isolation)
+            const bpm = outputMidi.header.bpm;
+            const quarterNoteSec = 60 / bpm;
+            const sixteenthSec = quarterNoteSec / 4;
+
+            const timeBuckets = {};
+
+            allNotes.forEach(note => {
+                // Quantize note start to closest 16th grid
+                const bucketTime = Math.round(note.time / sixteenthSec) * sixteenthSec;
+                if (!timeBuckets[bucketTime]) timeBuckets[bucketTime] = [];
+                timeBuckets[bucketTime].push(note);
+            });
+
+            // Filter out buckets with polyphony less than user choice (e.g. isolates chords from monophonic solos)
+            const barDurationSec = quarterNoteSec * 4;
+            const maxDurationSec = blockBars * barDurationSec;
+
+            Object.keys(timeBuckets).forEach(timeStr => {
+                const time = parseFloat(timeStr);
+                if (time >= maxDurationSec) return; // Limit to 4-bar or 8-bar block
+
+                const notesAtTime = timeBuckets[timeStr];
+                if (notesAtTime.length >= minPolyphony) {
+                    // Average duration for clean chord blocks
+                    const avgDuration = notesAtTime.reduce((acc, n) => acc + n.duration, 0) / notesAtTime.length;
+                    
+                    notesAtTime.forEach(note => {
+                        outputTrack.addNote({
+                            midi: note.midi,
+                            time: time,
+                            duration: Math.max(avgDuration, quarterNoteSec), // Ensure audible duration
+                            velocity: 0.8
+                        });
+                    });
+                }
+            });
+
+            // Generate and trigger download
+            const outArray = outputMidi.toArray();
+            const blob = new Blob([outArray], { type: 'audio/midi' });
+            downloadBlob(blob, `borrowed_progression_${blockBars}bars.mid`);
+        });
+
+        // =========================================================
+        // TOOL 2: VELOCITY & TIMING HUMANIZER LOGIC
+        // =========================================================
+        let humanizerMidiData = null;
+
+        // Dynamic Range Display Update
+        document.getElementById('timing-amount').addEventListener('input', (e) => {
+            document.getElementById('timing-val').innerText = e.target.value;
+        });
+        document.getElementById('velocity-amount').addEventListener('input', (e) => {
+            document.getElementById('vel-val').innerText = e.target.value;
+        });
+
+        setupDropZone('humanizer-drop', 'humanizer-input', async (file) => {
+            const arrayBuffer = await file.arrayBuffer();
+            humanizerMidiData = new Midi(arrayBuffer);
+            document.getElementById('humanizer-status').innerText = `Loaded: ${file.name}`;
+            document.getElementById('humanizer-btn').disabled = false;
+        });
+
+        document.getElementById('humanizer-btn').addEventListener('click', () => {
+            if (!humanizerMidiData) return;
+
+            const preset = document.getElementById('groove-preset').value;
+            const maxTimingOffsetSec = parseFloat(document.getElementById('timing-amount').value) / 1000; // ms to seconds
+            const maxVelOffset = parseInt(document.getElementById('velocity-amount').value) / 127; // normalize to 0-1 range
+
+            // Deep clone MIDI data via array buffer standard serialization
+            const processedMidi = new Midi(humanizerMidiData.toArray());
+
+            processedMidi.tracks.forEach(track => {
+                track.notes.forEach(note => {
+                    // Gaussian-like random helper
+                    const randG = () => ((Math.random() + Math.random() + Math.random()) - 1.5) / 1.5;
+
+                    let timingShift = randG() * maxTimingOffsetSec;
+                    let velShift = randG() * maxVelOffset;
+
+                    // Apply preset dynamics
+                    if (preset === 'mpc') {
+                        // MPC Micro-swing: delay 16th off-beats slightly
+                        const quarterSec = 60 / (processedMidi.header.bpm || 120);
+                        const sixteenthSec = quarterSec / 4;
+                        const sixteenthIndex = Math.round(note.time / sixteenthSec);
+                        if (sixteenthIndex % 2 !== 0) {
+                            timingShift += 0.012; // Swing push
+                        }
+                    } else if (preset === 'dilla') {
+                        // Lazy Dilla feel: push everything slightly behind the beat with extra velocity dip
+                        timingShift += (Math.random() * 0.02);
+                        velShift -= 0.05;
+                    }
+
+                    // Apply calculated time changes
+                    note.time = Math.max(0, note.time + timingShift);
+                    
+                    // Apply velocity changes (clamped between 0.1 and 1.0)
+                    note.velocity = Math.min(1.0, Math.max(0.1, note.velocity + velShift));
+                });
+            });
+
+            // Generate and download
+            const outArray = processedMidi.toArray();
+            const blob = new Blob([outArray], { type: 'audio/midi' });
+            downloadBlob(blob, `humanized_${preset}.mid`);
+        });
+    </script>
+</body>
+</html>
