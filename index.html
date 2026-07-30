@@ -14,9 +14,13 @@
             --accent-hover: #4f46e5;
             --secondary-btn: #374151;
             --secondary-btn-hover: #4b5563;
+            --success-color: #10b981;
+            --success-hover: #059669;
             --text-main: #f3f4f6;
             --text-muted: #9ca3af;
             --border-color: #2e3440;
+            --orig-note: #3b82f6;
+            --proc-note: #10b981;
         }
 
         body {
@@ -54,10 +58,10 @@
             grid-template-columns: 1fr;
             gap: 2rem;
             width: 100%;
-            max-width: 1050px;
+            max-width: 1100px;
         }
 
-        @media (min-width: 820px) {
+        @media (min-width: 900px) {
             .container {
                 grid-template-columns: 1fr 1fr;
             }
@@ -85,7 +89,7 @@
         .drop-zone {
             border: 2px dashed var(--border-color);
             border-radius: 8px;
-            padding: 1.5rem 1rem;
+            padding: 1.25rem 1rem;
             text-align: center;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -147,9 +151,44 @@
             border-color: var(--accent-color);
         }
 
+        .canvas-container {
+            width: 100%;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 120px;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            font-size: 0.75rem;
+            margin-top: 0.2rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .legend-box {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+        }
+
         .btn-group {
             display: flex;
-            gap: 0.75rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
             margin-top: 0.5rem;
         }
 
@@ -158,25 +197,33 @@
             color: white;
             border: none;
             border-radius: 6px;
-            padding: 0.7rem 1rem;
+            padding: 0.65rem 0.85rem;
             font-weight: 600;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             cursor: pointer;
             transition: background-color 0.2s ease;
-            flex: 2;
+            flex: 1 1 auto;
+            text-align: center;
         }
 
         .btn:hover:not(:disabled) {
             background-color: var(--accent-hover);
         }
 
-        .btn-preview {
+        .btn-secondary {
             background-color: var(--secondary-btn);
-            flex: 1;
         }
 
-        .btn-preview:hover:not(:disabled) {
+        .btn-secondary:hover:not(:disabled) {
             background-color: var(--secondary-btn-hover);
+        }
+
+        .btn-download {
+            background-color: var(--success-color);
+        }
+
+        .btn-download:hover:not(:disabled) {
+            background-color: var(--success-hover);
         }
 
         .btn:disabled {
@@ -196,7 +243,7 @@
 
     <header>
         <h1>cMIDI Studio Utilities Pro</h1>
-        <p>Harmonic Extraction, Key Shift, Groove Injection & Web Preview</p>
+        <p>Harmonic Extraction, Extreme Groove De-Quantization & Visual Waveform Comparison</p>
     </header>
 
     <div class="container">
@@ -208,6 +255,14 @@
                 <input type="file" id="borrower-input" accept=".mid,.midi" style="display: none;">
             </div>
             <div class="status" id="borrower-status">No file loaded</div>
+
+            <div class="canvas-container">
+                <canvas id="borrower-canvas"></canvas>
+            </div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-box" style="background: var(--orig-note);"></div> Original</div>
+                <div class="legend-item"><div class="legend-box" style="background: var(--proc-note);"></div> Extracted Chords</div>
+            </div>
 
             <div class="controls">
                 <div class="control-row">
@@ -261,8 +316,10 @@
                 </div>
 
                 <div class="btn-group">
-                    <button class="btn btn-preview" id="borrower-preview-btn" disabled>▶ Preview</button>
-                    <button class="btn" id="borrower-btn" disabled>Extract & Download</button>
+                    <button class="btn btn-secondary" id="borrower-apply-btn" disabled>Apply Processing</button>
+                    <button class="btn btn-secondary" id="borrower-orig-btn" disabled>▶ Original</button>
+                    <button class="btn btn-secondary" id="borrower-proc-btn" disabled>▶ Processed</button>
+                    <button class="btn btn-download" id="borrower-dl-btn" disabled>Download MIDI</button>
                 </div>
             </div>
         </div>
@@ -275,39 +332,49 @@
             </div>
             <div class="status" id="humanizer-status">No file loaded</div>
 
+            <div class="canvas-container">
+                <canvas id="humanizer-canvas"></canvas>
+            </div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-box" style="background: var(--orig-note);"></div> Original</div>
+                <div class="legend-item"><div class="legend-box" style="background: var(--proc-note);"></div> Humanized</div>
+            </div>
+
             <div class="controls">
                 <div class="control-group">
                     <label for="groove-preset">Groove Preset</label>
                     <select id="groove-preset">
-                        <option value="mpc">90s MPC Drum Sway (16th Swing)</option>
-                        <option value="dilla">Lazy Neo-Soul Dilla-Puck (Behind the beat)</option>
-                        <option value="drift">Human Drummer Drift (Natural velocity float)</option>
-                        <option value="lofi">Lo-Fi Chillhop Push (Micro-early snares & velocity)</option>
+                        <option value="mpc">90s MPC Drum Sway (Heavy 16th Swing)</option>
+                        <option value="dilla">Lazy Neo-Soul Dilla-Puck (Extreme Behind-Beat Drag)</option>
+                        <option value="drift">Human Drummer Drift (Natural velocity/time float)</option>
+                        <option value="lofi">Lo-Fi Push/Pull (Micro-randomization)</option>
                     </select>
                 </div>
 
                 <div class="control-group">
-                    <label for="timing-amount">Timing Shift (ms): <span id="timing-val">15</span>ms</label>
-                    <input type="range" id="timing-amount" min="0" max="60" value="15">
+                    <label for="timing-amount">Timing Offset Range (ms): <span id="timing-val">45</span>ms</label>
+                    <input type="range" id="timing-amount" min="0" max="150" value="45">
                 </div>
 
                 <div class="control-group">
-                    <label for="velocity-amount">Velocity Variation: <span id="vel-val">15</span></label>
-                    <input type="range" id="velocity-amount" min="0" max="50" value="15">
+                    <label for="velocity-amount">Velocity Variation Scale: <span id="vel-val">30</span></label>
+                    <input type="range" id="velocity-amount" min="0" max="80" value="30">
                 </div>
 
                 <div class="control-group">
                     <label for="timing-bias">Timing Bias</label>
                     <select id="timing-bias">
-                        <option value="centered" selected>Centered (Random Lead/Lag)</option>
-                        <option value="behind">Behind Beat (Laid Back / Dragging)</option>
+                        <option value="centered" selected>Centered (Lead & Lag)</option>
+                        <option value="behind">Behind Beat (Heavy Drag)</option>
                         <option value="ahead">Ahead Beat (Rushed / Driving)</option>
                     </select>
                 </div>
 
                 <div class="btn-group">
-                    <button class="btn btn-preview" id="humanizer-preview-btn" disabled>▶ Preview</button>
-                    <button class="btn" id="humanizer-btn" disabled>Apply Groove & Download</button>
+                    <button class="btn btn-secondary" id="humanizer-apply-btn" disabled>Apply Groove</button>
+                    <button class="btn btn-secondary" id="humanizer-orig-btn" disabled>▶ Original</button>
+                    <button class="btn btn-secondary" id="humanizer-proc-btn" disabled>▶ Processed</button>
+                    <button class="btn btn-download" id="humanizer-dl-btn" disabled>Download MIDI</button>
                 </div>
             </div>
         </div>
@@ -315,17 +382,17 @@
     </div>
 
     <script>
-        // --- Shared Audio Preview Synth ---
+        // --- Shared Audio Engine ---
         let synth = null;
-        let isPlaying = false;
+        let activePlayingBtn = null;
 
         function getSynth() {
             if (!synth) {
                 synth = new Tone.PolySynth(Tone.Synth, {
                     oscillator: { type: 'triangle' },
-                    envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.8 }
+                    envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.2 }
                 }).toDestination();
-                synth.volume.value = -8;
+                synth.volume.value = -6;
             }
             return synth;
         }
@@ -333,13 +400,17 @@
         function stopPlayback() {
             Tone.Transport.stop();
             Tone.Transport.cancel();
-            isPlaying = false;
-            document.getElementById('borrower-preview-btn').innerText = "▶ Preview";
-            document.getElementById('humanizer-preview-btn').innerText = "▶ Preview";
+            if (synth) {
+                synth.releaseAll();
+            }
+            if (activePlayingBtn) {
+                activePlayingBtn.innerText = activePlayingBtn.dataset.label;
+                activePlayingBtn = null;
+            }
         }
 
-        async function previewMidi(midiInstance, btnElement) {
-            if (isPlaying) {
+        async function previewMidi(midiInstance, btnElement, defaultLabel) {
+            if (activePlayingBtn === btnElement) {
                 stopPlayback();
                 return;
             }
@@ -347,16 +418,25 @@
             await Tone.start();
             stopPlayback();
 
+            btnElement.dataset.label = defaultLabel;
+            activePlayingBtn = btnElement;
+            btnElement.innerText = "■ Stop";
+
             const polySynth = getSynth();
             const bpm = midiInstance.header.bpm || 120;
             Tone.Transport.bpm.value = bpm;
 
+            let maxDuration = 0;
+
             midiInstance.tracks.forEach(track => {
                 track.notes.forEach(note => {
+                    const noteEnd = note.time + note.duration;
+                    if (noteEnd > maxDuration) maxDuration = noteEnd;
+
                     Tone.Transport.schedule((time) => {
                         polySynth.triggerAttackRelease(
                             Tone.Frequency(note.midi, "midi").toNote(),
-                            note.duration,
+                            Math.max(0.05, note.duration),
                             time,
                             note.velocity
                         );
@@ -364,19 +444,75 @@
                 });
             });
 
-            btnElement.innerText = "■ Stop";
-            isPlaying = true;
-
             Tone.Transport.start();
-            
+
             // Auto stop when finished
-            const maxDuration = Math.max(...midiInstance.tracks.flatMap(t => t.notes.map(n => n.time + n.duration)));
             Tone.Transport.schedule(() => {
                 stopPlayback();
-            }, maxDuration + 0.5);
+            }, maxDuration + 0.2);
         }
 
-        // --- Helper: Setup Drag and Drop File Handlers ---
+        // --- Visualizer Piano Roll Renderer ---
+        function renderPianoRoll(canvasId, origMidi, procMidi) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // Handle DPI scaling
+            const width = canvas.width = canvas.parentElement.clientWidth;
+            const height = canvas.height = 120;
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = "#0f1115";
+            ctx.fillRect(0, 0, width, height);
+
+            let allOrigNotes = origMidi ? origMidi.tracks.flatMap(t => t.notes) : [];
+            let allProcNotes = procMidi ? procMidi.tracks.flatMap(t => t.notes) : [];
+
+            if (allOrigNotes.length === 0 && allProcNotes.length === 0) return;
+
+            const combined = [...allOrigNotes, ...allProcNotes];
+            const minPitch = Math.min(...combined.map(n => n.midi)) - 2;
+            const maxPitch = Math.max(...combined.map(n => n.midi)) + 2;
+            const maxTime = Math.max(...combined.map(n => n.time + n.duration), 1);
+
+            // Draw Background Grid
+            ctx.strokeStyle = "#1e232d";
+            ctx.lineWidth = 1;
+            for (let x = 0; x < width; x += width / 16) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+
+            const scaleX = width / maxTime;
+            const pitchRange = Math.max(1, maxPitch - minPitch);
+            const scaleY = height / pitchRange;
+
+            // Draw Original Notes (Blue)
+            if (origMidi) {
+                ctx.fillStyle = "rgba(59, 130, 246, 0.6)";
+                allOrigNotes.forEach(note => {
+                    const x = note.time * scaleX;
+                    const w = Math.max(2, note.duration * scaleX);
+                    const y = height - ((note.midi - minPitch) * scaleY);
+                    ctx.fillRect(x, y, w, Math.max(2, scaleY - 1));
+                });
+            }
+
+            // Draw Processed Notes (Green Overlay)
+            if (procMidi) {
+                ctx.fillStyle = "rgba(16, 185, 129, 0.85)";
+                allProcNotes.forEach(note => {
+                    const x = note.time * scaleX;
+                    const w = Math.max(2, note.duration * scaleX);
+                    const y = height - ((note.midi - minPitch) * scaleY);
+                    ctx.fillRect(x, y, w, Math.max(2, scaleY - 1));
+                });
+            }
+        }
+
+        // --- Helper: Drag and Drop Setup ---
         function setupDropZone(dropZoneId, inputId, callback) {
             const dropZone = document.getElementById(dropZoneId);
             const input = document.getElementById(inputId);
@@ -407,7 +543,6 @@
             });
         }
 
-        // --- Helper: Download Blob as File ---
         function downloadBlob(blob, filename) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -420,38 +555,42 @@
         }
 
         // =========================================================
-        // TOOL 1: CHORD PROGRESSION BORROWER LOGIC
+        // TOOL 1: CHORD PROGRESSION BORROWER
         // =========================================================
-        let borrowerMidiData = null;
+        let borrowerOrigMidi = null;
+        let borrowerProcMidi = null;
 
         setupDropZone('borrower-drop', 'borrower-input', async (file) => {
             const arrayBuffer = await file.arrayBuffer();
-            borrowerMidiData = new Midi(arrayBuffer);
+            borrowerOrigMidi = new Midi(arrayBuffer);
+            borrowerProcMidi = null;
+
             document.getElementById('borrower-status').innerText = `Loaded: ${file.name}`;
-            document.getElementById('borrower-btn').disabled = false;
-            document.getElementById('borrower-preview-btn').disabled = false;
+            document.getElementById('borrower-apply-btn').disabled = false;
+            document.getElementById('borrower-orig-btn').disabled = false;
+            document.getElementById('borrower-proc-btn').disabled = true;
+            document.getElementById('borrower-dl-btn').disabled = true;
+
+            renderPianoRoll('borrower-canvas', borrowerOrigMidi, null);
         });
 
         function processBorrowerMidi() {
-            if (!borrowerMidiData) return null;
+            if (!borrowerOrigMidi) return;
 
             const minPolyphony = parseInt(document.getElementById('polyphony-threshold').value);
             const blockBars = parseInt(document.getElementById('block-length').value);
             const transpose = parseInt(document.getElementById('transpose-semitones').value);
             const quantizeDivisions = parseInt(document.getElementById('quantize-grid').value);
 
-            const outputMidi = new Midi();
-            outputMidi.header.bpm = borrowerMidiData.header.bpm || 120;
-            const outputTrack = outputMidi.addTrack();
+            borrowerProcMidi = new Midi();
+            borrowerProcMidi.header.bpm = borrowerOrigMidi.header.bpm || 120;
+            const outputTrack = borrowerProcMidi.addTrack();
 
-            let allNotes = [];
-            borrowerMidiData.tracks.forEach(track => {
-                allNotes = allNotes.concat(track.notes);
-            });
+            let allNotes = borrowerOrigMidi.tracks.flatMap(t => t.notes);
 
-            const bpm = outputMidi.header.bpm;
+            const bpm = borrowerProcMidi.header.bpm;
             const quarterNoteSec = 60 / bpm;
-            const snapIntervalSec = (quarterNoteSec * 4) / (quantizeDivisions * 4); 
+            const snapIntervalSec = (quarterNoteSec * 4) / (quantizeDivisions * 4);
 
             const timeBuckets = {};
 
@@ -461,8 +600,7 @@
                 timeBuckets[bucketTime].push(note);
             });
 
-            const barDurationSec = quarterNoteSec * 4;
-            const maxDurationSec = blockBars * barDurationSec;
+            const maxDurationSec = blockBars * quarterNoteSec * 4;
 
             Object.keys(timeBuckets).forEach(timeStr => {
                 const time = parseFloat(timeStr);
@@ -483,27 +621,33 @@
                 }
             });
 
-            return outputMidi;
+            document.getElementById('borrower-proc-btn').disabled = false;
+            document.getElementById('borrower-dl-btn').disabled = false;
+            renderPianoRoll('borrower-canvas', borrowerOrigMidi, borrowerProcMidi);
         }
 
-        document.getElementById('borrower-preview-btn').addEventListener('click', () => {
-            const processed = processBorrowerMidi();
-            if (processed) previewMidi(processed, document.getElementById('borrower-preview-btn'));
+        document.getElementById('borrower-apply-btn').addEventListener('click', processBorrowerMidi);
+
+        document.getElementById('borrower-orig-btn').addEventListener('click', () => {
+            if (borrowerOrigMidi) previewMidi(borrowerOrigMidi, document.getElementById('borrower-orig-btn'), "▶ Original");
         });
 
-        document.getElementById('borrower-btn').addEventListener('click', () => {
-            const processed = processBorrowerMidi();
-            if (!processed) return;
+        document.getElementById('borrower-proc-btn').addEventListener('click', () => {
+            if (borrowerProcMidi) previewMidi(borrowerProcMidi, document.getElementById('borrower-proc-btn'), "▶ Processed");
+        });
+
+        document.getElementById('borrower-dl-btn').addEventListener('click', () => {
+            if (!borrowerProcMidi) return;
             const blockBars = document.getElementById('block-length').value;
-            const outArray = processed.toArray();
-            const blob = new Blob([outArray], { type: 'audio/midi' });
+            const blob = new Blob([borrowerProcMidi.toArray()], { type: 'audio/midi' });
             downloadBlob(blob, `borrowed_progression_${blockBars}bars.mid`);
         });
 
         // =========================================================
-        // TOOL 2: VELOCITY & TIMING HUMANIZER LOGIC
+        // TOOL 2: VELOCITY & TIMING HUMANIZER
         // =========================================================
-        let humanizerMidiData = null;
+        let humanizerOrigMidi = null;
+        let humanizerProcMidi = null;
 
         document.getElementById('timing-amount').addEventListener('input', (e) => {
             document.getElementById('timing-val').innerText = e.target.value;
@@ -514,24 +658,31 @@
 
         setupDropZone('humanizer-drop', 'humanizer-input', async (file) => {
             const arrayBuffer = await file.arrayBuffer();
-            humanizerMidiData = new Midi(arrayBuffer);
+            humanizerOrigMidi = new Midi(arrayBuffer);
+            humanizerProcMidi = null;
+
             document.getElementById('humanizer-status').innerText = `Loaded: ${file.name}`;
-            document.getElementById('humanizer-btn').disabled = false;
-            document.getElementById('humanizer-preview-btn').disabled = false;
+            document.getElementById('humanizer-apply-btn').disabled = false;
+            document.getElementById('humanizer-orig-btn').disabled = false;
+            document.getElementById('humanizer-proc-btn').disabled = true;
+            document.getElementById('humanizer-dl-btn').disabled = true;
+
+            renderPianoRoll('humanizer-canvas', humanizerOrigMidi, null);
         });
 
         function processHumanizedMidi() {
-            if (!humanizerMidiData) return null;
+            if (!humanizerOrigMidi) return;
 
             const preset = document.getElementById('groove-preset').value;
             const bias = document.getElementById('timing-bias').value;
-            const maxTimingOffsetSec = parseFloat(document.getElementById('timing-amount').value) / 1000;
+            const maxTimingOffsetSec = parseFloat(document.getElementById('timing-amount').value) / 1000; // ms to sec
             const maxVelOffset = parseInt(document.getElementById('velocity-amount').value) / 127;
 
-            const processedMidi = new Midi(humanizerMidiData.toArray());
+            humanizerProcMidi = new Midi(humanizerOrigMidi.toArray());
 
-            processedMidi.tracks.forEach(track => {
+            humanizerProcMidi.tracks.forEach(track => {
                 track.notes.forEach(note => {
+                    // Random Gaussian bell-curve generator
                     const randG = () => ((Math.random() + Math.random() + Math.random()) - 1.5) / 1.5;
 
                     let timingShift = randG() * maxTimingOffsetSec;
@@ -541,19 +692,20 @@
                     if (bias === 'behind') timingShift = Math.abs(timingShift);
                     if (bias === 'ahead') timingShift = -Math.abs(timingShift);
 
-                    // Apply Groove Presets
-                    const quarterSec = 60 / (processedMidi.header.bpm || 120);
+                    // Apply Dynamic Presets
+                    const bpm = humanizerProcMidi.header.bpm || 120;
+                    const quarterSec = 60 / bpm;
                     const sixteenthSec = quarterSec / 4;
                     const sixteenthIndex = Math.round(note.time / sixteenthSec);
 
                     if (preset === 'mpc') {
-                        if (sixteenthIndex % 2 !== 0) timingShift += 0.015; // 16th swing push
+                        if (sixteenthIndex % 2 !== 0) timingShift += 0.035; // Distinct 16th swing push
                     } else if (preset === 'dilla') {
-                        timingShift += (Math.random() * 0.022); // Lay back
-                        velShift -= 0.08;
+                        timingShift += (Math.random() * 0.05) + 0.02; // Heavy drag behind beat
+                        velShift -= 0.15;
                     } else if (preset === 'lofi') {
-                        if (sixteenthIndex % 4 === 2) timingShift -= 0.008; // Slight snare push
-                        velShift += (Math.random() - 0.5) * 0.12;
+                        if (sixteenthIndex % 4 === 2) timingShift -= 0.02; // Rushed snares
+                        velShift += (Math.random() - 0.5) * 0.25;
                     }
 
                     note.time = Math.max(0, note.time + timingShift);
@@ -561,20 +713,25 @@
                 });
             });
 
-            return processedMidi;
+            document.getElementById('humanizer-proc-btn').disabled = false;
+            document.getElementById('humanizer-dl-btn').disabled = false;
+            renderPianoRoll('humanizer-canvas', humanizerOrigMidi, humanizerProcMidi);
         }
 
-        document.getElementById('humanizer-preview-btn').addEventListener('click', () => {
-            const processed = processHumanizedMidi();
-            if (processed) previewMidi(processed, document.getElementById('humanizer-preview-btn'));
+        document.getElementById('humanizer-apply-btn').addEventListener('click', processHumanizedMidi);
+
+        document.getElementById('humanizer-orig-btn').addEventListener('click', () => {
+            if (humanizerOrigMidi) previewMidi(humanizerOrigMidi, document.getElementById('humanizer-orig-btn'), "▶ Original");
         });
 
-        document.getElementById('humanizer-btn').addEventListener('click', () => {
-            const processed = processHumanizedMidi();
-            if (!processed) return;
+        document.getElementById('humanizer-proc-btn').addEventListener('click', () => {
+            if (humanizerProcMidi) previewMidi(humanizerProcMidi, document.getElementById('humanizer-proc-btn'), "▶ Processed");
+        });
+
+        document.getElementById('humanizer-dl-btn').addEventListener('click', () => {
+            if (!humanizerProcMidi) return;
             const preset = document.getElementById('groove-preset').value;
-            const outArray = processed.toArray();
-            const blob = new Blob([outArray], { type: 'audio/midi' });
+            const blob = new Blob([humanizerProcMidi.toArray()], { type: 'audio/midi' });
             downloadBlob(blob, `humanized_${preset}.mid`);
         });
     </script>
