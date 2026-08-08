@@ -552,6 +552,17 @@
         <p class="groove-desc" id="modeDesc"></p>
       </div>
 
+      <div class="control-row" id="loopRow">
+        <label class="toggle-row" for="loopToggle">
+          <span>Loop Short Layers</span>
+          <span class="switch">
+            <input type="checkbox" id="loopToggle" checked>
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+        </label>
+        <p class="groove-desc" id="loopDesc"></p>
+      </div>
+
       <div class="control-row">
         <label class="toggle-row" for="harmonizeToggle">
           <span>Harmonize Key</span>
@@ -583,6 +594,10 @@
           <option value="lofi">Lo-Fi Hip Hop</option>
           <option value="synthwave">Synthwave</option>
           <option value="ambient">Ambient</option>
+          <option value="trap">Trap</option>
+          <option value="house">House</option>
+          <option value="reggae">Reggae (One Drop)</option>
+          <option value="jazz">Jazz Swing</option>
         </select>
         <p class="groove-desc" id="grooveDesc"></p>
       </div>
@@ -648,6 +663,9 @@ const arrangementList = document.getElementById('arrangementList');
 const arrangementHint = document.getElementById('arrangementHint');
 const modeSelect      = document.getElementById('modeSelect');
 const modeDesc        = document.getElementById('modeDesc');
+const loopRow         = document.getElementById('loopRow');
+const loopToggle      = document.getElementById('loopToggle');
+const loopDesc        = document.getElementById('loopDesc');
 const harmonizeToggle = document.getElementById('harmonizeToggle');
 const harmonizeDesc   = document.getElementById('harmonizeDesc');
 const snapToggle      = document.getElementById('snapToggle');
@@ -674,11 +692,16 @@ const MODE_COPY = {
 
 const HARMONIZE_DESC = "Detects each clip's key and transposes the others to match the most melodically dominant clip, so unrelated files don't clash.";
 const SNAP_DESC = "Also nudges any note outside the target scale onto the nearest in-key pitch. Stronger blend, but can noticeably alter melodies.";
+const LOOP_DESC = "Repeats a shorter clip so it fills the whole merged length instead of ending early — keeps every layer's track the same length.";
 
 const GROOVE_COPY = {
   lofi: "Laid-back boom-bap pocket. Kick on 1, snare dragged a hair behind the grid, loose 8th-note hats.",
   synthwave: "Driving four-on-the-floor. Kick and hats locked dead to the quarter-note grid, no drag.",
-  ambient: "Sparse pulse. A soft kick and distant hat every other bar, lots of open space."
+  ambient: "Sparse pulse. A soft kick and distant hat every other bar, lots of open space.",
+  trap: "Syncopated kick with a rolling 16th-note hi-hat, snare/clap on 3, occasional hat flourish.",
+  house: "Four-on-the-floor kick with a clapped backbeat and open off-beat hats for that classic lift.",
+  reggae: "One-drop feel — kick and snare land together on beat 3, beat 1 stays open, steady 8th-note hats.",
+  jazz: "Swung ride-style hats on a triplet subdivision, a feathered kick, and sparse loose snare comping."
 };
 
 /* ============================================================
@@ -714,6 +737,9 @@ function updateModeDesc(){
   arrangementHint.textContent = isMerge
     ? 'All clips will play together from the start — drag order only changes track order in the file, not timing.'
     : 'Drag clips to set the playback order.';
+  loopRow.hidden = !isMerge;
+  loopDesc.hidden = !isMerge;
+  if (isMerge) loopDesc.textContent = LOOP_DESC;
 }
 
 function updateHarmonizeDesc(){
@@ -950,6 +976,48 @@ function applyGroovePattern(drumTrack, groove, totalDuration, bpm){
         addDrumHit(drumTrack, GM_KICK, barStart, 0.5, true);
         addDrumHit(drumTrack, GM_HIHAT, barStart + 2 * beatLen, 0.25, true);
       }
+    } else if (groove === 'trap'){
+      // Syncopated kick, snare/clap on 3, rolling 16th-note hats with an
+      // occasional flourish every other bar
+      addDrumHit(drumTrack, GM_KICK, barStart, 0.9, true);
+      addDrumHit(drumTrack, GM_KICK, barStart + 2.5 * beatLen, 0.65, true);
+      addDrumHit(drumTrack, GM_SNARE, barStart + 2 * beatLen, 0.85, true);
+      for (let s = 0; s < 16; s++){
+        const isRollZone = bar % 2 === 1 && s >= 12;
+        const vel = isRollZone ? 0.28 + (s % 2) * 0.12 : (s % 4 === 0 ? 0.45 : 0.22);
+        addDrumHit(drumTrack, GM_HIHAT, barStart + s * 0.25 * beatLen, vel, true);
+      }
+    } else if (groove === 'house'){
+      // Four-on-the-floor kick, clapped backbeat, open off-beat hats
+      for (let b = 0; b < 4; b++){
+        addDrumHit(drumTrack, GM_KICK, barStart + b * beatLen, 0.88, false);
+        addDrumHit(drumTrack, GM_HIHAT, barStart + b * beatLen + beatLen * 0.5, 0.55, false);
+      }
+      addDrumHit(drumTrack, GM_SNARE, barStart + 1 * beatLen, 0.75, false);
+      addDrumHit(drumTrack, GM_SNARE, barStart + 1 * beatLen + 0.02, 0.4, false); // clap flam
+      addDrumHit(drumTrack, GM_SNARE, barStart + 3 * beatLen, 0.75, false);
+      addDrumHit(drumTrack, GM_SNARE, barStart + 3 * beatLen + 0.02, 0.4, false);
+    } else if (groove === 'reggae'){
+      // One-drop: kick and snare land together on beat 3, beat 1 left open,
+      // steady 8th-note hats
+      addDrumHit(drumTrack, GM_KICK, barStart + 2 * beatLen, 0.8, true);
+      addDrumHit(drumTrack, GM_SNARE, barStart + 2 * beatLen, 0.75, true);
+      for (let e = 0; e < 8; e++){
+        addDrumHit(drumTrack, GM_HIHAT, barStart + e * 0.5 * beatLen, 0.3, true);
+      }
+    } else if (groove === 'jazz'){
+      // Swung ride pattern on a triplet subdivision, feathered kick,
+      // sparse loose snare comping
+      for (let b = 0; b < 4; b++){
+        addDrumHit(drumTrack, GM_HIHAT, barStart + b * beatLen, 0.5, true);
+        addDrumHit(drumTrack, GM_HIHAT, barStart + b * beatLen + beatLen * 0.667, 0.32, true);
+      }
+      if (bar % 2 === 0){
+        addDrumHit(drumTrack, GM_KICK, barStart, 0.32, true);
+      }
+      if (Math.random() < 0.45){
+        addDrumHit(drumTrack, GM_SNARE, barStart + (1 + Math.random() * 2) * beatLen, 0.28, true);
+      }
     }
   }
 }
@@ -1081,11 +1149,12 @@ function buildOutputMidi(){
   const mode = modeSelect.value;
   const harmonize = harmonizeToggle.checked && clips.length > 0;
   const snap = harmonize && snapToggle.checked;
+  const loopShort = mode === 'merge' && loopToggle.checked;
 
   const harmonyPlan = harmonize ? buildHarmonyPlan() : null;
 
   const result = mode === 'merge'
-    ? buildMergedMidi(bpm, groove, harmonyPlan, snap)
+    ? buildMergedMidi(bpm, groove, harmonyPlan, snap, loopShort)
     : buildSequencedMidi(bpm, groove, harmonyPlan, snap);
 
   const bytes = result.midi.toArray();
@@ -1212,7 +1281,7 @@ function buildSequencedMidi(bpm, groove, harmonyPlan, snap){
 // MERGE: every clip starts at time zero and plays simultaneously as its own
 // layer — for combining files that are already parts of the same song
 // (e.g. a melody file, a bass file, a drum file).
-function buildMergedMidi(bpm, groove, harmonyPlan, snap){
+function buildMergedMidi(bpm, groove, harmonyPlan, snap, loopShort){
   const output = new Midi();
   output.header.setTempo(bpm);
 
@@ -1223,64 +1292,75 @@ function buildMergedMidi(bpm, groove, harmonyPlan, snap){
   drumTrack.name = 'Standard Drums';
   drumTrack.channel = 9; // GM Channel 10, 0-indexed
 
-  let totalDuration = 0;
+  // Work out the shared total length up front so every layer can be filled
+  // to it — otherwise a short clip's track just stops early while longer
+  // ones keep going, which is what makes tracks look mismatched in a DAW.
+  const scaledDurations = clips.map((c) => Math.max(0.1, (c.duration || 1) * (c.originalBpm / bpm)));
+  const totalDuration = Math.max(1, ...scaledDurations);
+  const MAX_LOOPS = 200; // bounds worst-case note count for pathologically short clips
 
-  clips.forEach((clip) => {
+  clips.forEach((clip, clipIndex) => {
     // Re-time each layer onto the shared tempo grid so they all lock together.
     const tempoRatio = clip.originalBpm / bpm;
+    const scaledClipDuration = scaledDurations[clipIndex];
 
     const melodyTrack = output.addTrack();
     melodyTrack.name = (clip.name || 'Clip').slice(0, 28) + ' — Melody';
 
-    let clipMaxTime = 0;
     let melodicIndex = 0;
+    const loopCount = loopShort
+      ? Math.min(MAX_LOOPS, Math.max(1, Math.ceil(totalDuration / scaledClipDuration)))
+      : 1;
 
-    clip.midi.tracks.forEach((srcTrack) => {
-      const isDrumSource = srcTrack.channel === 9 || /drum|kit|perc/i.test(srcTrack.name || '');
+    for (let loop = 0; loop < loopCount; loop++){
+      const loopOffset = loop * scaledClipDuration;
+      if (loopOffset >= totalDuration) break;
 
-      srcTrack.notes.forEach((note) => {
-        const scaledTime = note.time * tempoRatio;
-        const scaledDuration = Math.max(0.02, note.duration * tempoRatio);
-        clipMaxTime = Math.max(clipMaxTime, scaledTime + scaledDuration);
+      clip.midi.tracks.forEach((srcTrack) => {
+        const isDrumSource = srcTrack.channel === 9 || /drum|kit|perc/i.test(srcTrack.name || '');
 
-        const downbeat = isDownbeat(scaledTime, bpm);
-        const velocity = humanizeVelocity(note.velocity, downbeat);
-        const placedTime = Math.max(0, scaledTime + swingDelta());
+        srcTrack.notes.forEach((note) => {
+          const scaledTime = note.time * tempoRatio;
+          const scaledDuration = Math.max(0.02, note.duration * tempoRatio);
+          const placedBase = loopOffset + scaledTime;
+          if (placedBase >= totalDuration) return; // don't spill past the shared end point
 
-        if (isDrumSource){
-          drumTrack.addNote({
-            midi: note.midi,
-            time: placedTime,
-            duration: scaledDuration,
-            velocity: velocity
-          });
-        } else {
-          const pitch = harmonizePitch(note.midi, clip, harmonyPlan, snap);
-          melodyTrack.addNote({
-            midi: pitch,
-            time: placedTime,
-            duration: scaledDuration,
-            velocity: velocity
-          });
+          const downbeat = isDownbeat(scaledTime, bpm);
+          const velocity = humanizeVelocity(note.velocity, downbeat);
+          const placedTime = Math.max(0, placedBase + swingDelta());
 
-          melodicIndex++;
-          if (melodicIndex % 2 === 0){
-            const bassPitch = (pitch % 12) + 36; // dropped to octave 2
-            bassTrack.addNote({
-              midi: bassPitch,
+          if (isDrumSource){
+            drumTrack.addNote({
+              midi: note.midi,
               time: placedTime,
-              duration: Math.min(scaledDuration * 1.5, 1.5),
-              velocity: clamp(velocity * 0.9, 0.2, 1)
+              duration: scaledDuration,
+              velocity: velocity
             });
-          }
-        }
-      });
-    });
+          } else {
+            const pitch = harmonizePitch(note.midi, clip, harmonyPlan, snap);
+            melodyTrack.addNote({
+              midi: pitch,
+              time: placedTime,
+              duration: scaledDuration,
+              velocity: velocity
+            });
 
-    totalDuration = Math.max(totalDuration, clipMaxTime);
+            melodicIndex++;
+            if (melodicIndex % 2 === 0){
+              const bassPitch = (pitch % 12) + 36; // dropped to octave 2
+              bassTrack.addNote({
+                midi: bassPitch,
+                time: placedTime,
+                duration: Math.min(scaledDuration * 1.5, 1.5),
+                velocity: clamp(velocity * 0.9, 0.2, 1)
+              });
+            }
+          }
+        });
+      });
+    }
   });
 
-  if (totalDuration === 0) totalDuration = 1;
   applyGroovePattern(drumTrack, groove, totalDuration, bpm);
 
   return { midi: output, duration: totalDuration };
@@ -1519,6 +1599,8 @@ modeSelect.addEventListener('change', () => {
   invalidateBuiltOutput();
 });
 
+loopToggle.addEventListener('change', invalidateBuiltOutput);
+
 harmonizeToggle.addEventListener('change', () => {
   updateHarmonizeDesc();
   invalidateBuiltOutput();
@@ -1588,6 +1670,7 @@ resetBtn.addEventListener('click', () => {
   updateGrooveDesc();
   modeSelect.value = 'stitch';
   updateModeDesc();
+  loopToggle.checked = true;
   harmonizeToggle.checked = true;
   snapToggle.checked = false;
   updateHarmonizeDesc();
