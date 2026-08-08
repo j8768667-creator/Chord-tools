@@ -180,6 +180,7 @@
     border-radius:10px; border:1px solid var(--amber-dim);
     background:var(--panel-raised); color:var(--ink);
     font-size:14px; font-weight:600; font-family:var(--font-ui);
+    cursor:pointer;
   }
   .btn-browse:active{ background:#2E2617; }
 
@@ -230,8 +231,9 @@
     letter-spacing:-2px;
     touch-action:none;
     display:flex; align-items:center; justify-content:center;
+    cursor:grab;
   }
-  .drag-handle:active{ color:var(--amber); }
+  .drag-handle:active{ color:var(--amber); cursor:grabbing; }
 
   .clip-info{
     flex:1 1 auto;
@@ -285,6 +287,7 @@
     background:transparent;
     color:var(--ink-dim);
     font-size:15px;
+    cursor:pointer;
   }
   .remove-btn:active{ color:var(--red); }
 
@@ -302,12 +305,6 @@
   }
   .control-row label .value{
     font-family:var(--font-mono); color:var(--amber); font-size:13px;
-  }
-
-  .grid-2col{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:10px;
   }
 
   input[type="range"]{
@@ -344,14 +341,6 @@
     padding:0 12px;
   }
 
-  .checkbox-row{
-    display:flex; align-items:center; justify-content:space-between;
-    font-size:13px; font-weight:600; cursor:pointer;
-  }
-  .checkbox-row input[type="checkbox"]{
-    width:22px; height:22px; accent-color:var(--amber);
-  }
-
   .groove-desc{
     margin:8px 2px 0;
     font-size:11.5px;
@@ -374,6 +363,7 @@
     font-weight:700;
     font-family:var(--font-ui);
     letter-spacing:0.01em;
+    cursor:pointer;
   }
 
   #stitchBtn{
@@ -384,6 +374,7 @@
   #stitchBtn:disabled{
     background:var(--panel-raised);
     color:var(--ink-dim);
+    cursor:not-allowed;
   }
 
   #downloadLink{
@@ -418,9 +409,10 @@
     color:var(--ink);
     font-size:15px;
     display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
   }
   .preview-btn:active:not(:disabled){ border-color:var(--teal); color:var(--teal); }
-  .preview-btn:disabled{ color:var(--ink-dim); opacity:0.5; }
+  .preview-btn:disabled{ color:var(--ink-dim); opacity:0.5; cursor:not-allowed; }
 
   .preview-track{
     flex:1 1 auto;
@@ -520,55 +512,11 @@
       </div>
 
       <div class="control-row">
-        <label>Key Harmonization / Pitch Snap</label>
-        <div class="grid-2col">
-          <select id="keyRootSelect">
-            <option value="0">C</option>
-            <option value="1">C# / Db</option>
-            <option value="2">D</option>
-            <option value="3">D# / Eb</option>
-            <option value="4">E</option>
-            <option value="5">F</option>
-            <option value="6">F# / Gb</option>
-            <option value="7">G</option>
-            <option value="8">G# / Ab</option>
-            <option value="9">A</option>
-            <option value="10">A# / Bb</option>
-            <option value="11">B</option>
-          </select>
-
-          <select id="scaleTypeSelect">
-            <option value="chromatic">Off (Chromatic)</option>
-            <option value="major" selected>Major Scale</option>
-            <option value="minor">Minor Scale (Natural)</option>
-            <option value="dorian">Dorian Mode</option>
-            <option value="mixolydian">Mixolydian Mode</option>
-            <option value="pentatonic_major">Pentatonic Major</option>
-            <option value="pentatonic_minor">Pentatonic Minor</option>
-          </select>
-        </div>
-        <p class="groove-desc">Quantizes all melodic pitches to the selected key scale to guarantee no out-of-key or dissonant notes.</p>
-      </div>
-
-      <div class="control-row">
-        <label for="matchLengthToggle" class="checkbox-row">
-          <span>Equalize Clip Lengths</span>
-          <input type="checkbox" id="matchLengthToggle" checked>
-        </label>
-        <p class="groove-desc">Automatically loops shorter clips so their duration matches the longest clip in the arrangement.</p>
-      </div>
-
-      <div class="control-row">
         <label for="grooveSelect">Groove Profile</label>
         <select id="grooveSelect">
           <option value="lofi">Lo-Fi Hip Hop</option>
           <option value="synthwave">Synthwave</option>
-          <option value="house">Deep House</option>
-          <option value="trap">Trap / Hip Hop</option>
-          <option value="afrobeats">Afrobeats Groove</option>
-          <option value="funk">16th Funk / Soul</option>
-          <option value="jazz">Jazz Swing</option>
-          <option value="ambient">Ambient Pulse</option>
+          <option value="ambient">Ambient</option>
         </select>
         <p class="groove-desc" id="grooveDesc"></p>
       </div>
@@ -599,13 +547,26 @@
 
 <script type="module">
 let Midi;
+
+// Helper to resolve exported Midi class regardless of CDN wrapping style
+function resolveMidiExport(mod) {
+  return mod.Midi || (mod.default && mod.default.Midi) || mod.default;
+}
+
 try {
-  ({ Midi } = await import("https://esm.sh/@tonejs/midi@2.0.28"));
-} catch (libErr){
-  console.error('Failed to load @tonejs/midi from CDN:', libErr);
-  const bar = document.getElementById('statusBar');
-  bar.textContent = 'Could not load the MIDI library (no connection to esm.sh?). Import/export will not work until this loads.';
-  bar.classList.add('error');
+  const mod = await import("https://esm.sh/@tonejs/midi@2.0.28");
+  Midi = resolveMidiExport(mod);
+} catch (primaryErr) {
+  console.warn('esm.sh load failed, trying fallback CDN...', primaryErr);
+  try {
+    const mod = await import("https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/+esm");
+    Midi = resolveMidiExport(mod);
+  } catch (libErr) {
+    console.error('Failed to load @tonejs/midi from CDNs:', libErr);
+    const bar = document.getElementById('statusBar');
+    bar.textContent = 'Could not load the MIDI library. Import/export will not work until network is available.';
+    bar.classList.add('error');
+  }
 }
 
 /* ============================================================
@@ -614,7 +575,7 @@ try {
 let clips = [];        // { id, name, midi, duration, originalBpm }
 let clipIdCounter = 0;
 let currentBlobUrl = null;
-let lastBuiltMidi = null;      // the tonejs Midi instance behind the last successful stitch
+let lastBuiltMidi = null;      // tonejs Midi instance
 let lastBuiltDuration = 0;     // seconds
 
 let audioCtx = null;
@@ -627,50 +588,32 @@ let previewEndTimeoutId = null;
 /* ============================================================
    DOM refs
    ============================================================ */
-const ingestZone        = document.getElementById('ingestZone');
-const browseBtn         = document.getElementById('browseBtn');
-const fileInput         = document.getElementById('fileInput');
-const arrangementList   = document.getElementById('arrangementList');
-const tempoSlider       = document.getElementById('tempoSlider');
-const tempoValue        = document.getElementById('tempoValue');
-const keyRootSelect     = document.getElementById('keyRootSelect');
-const scaleTypeSelect   = document.getElementById('scaleTypeSelect');
-const matchLengthToggle = document.getElementById('matchLengthToggle');
-const grooveSelect      = document.getElementById('grooveSelect');
-const grooveDesc        = document.getElementById('grooveDesc');
-const stitchBtn         = document.getElementById('stitchBtn');
-const downloadLink      = document.getElementById('downloadLink');
-const resetBtn          = document.getElementById('resetBtn');
-const statusBar         = document.getElementById('statusBar');
-const previewRow        = document.getElementById('previewRow');
-const playBtn           = document.getElementById('playBtn');
-const stopBtn           = document.getElementById('stopBtn');
-const previewProgress   = document.getElementById('previewProgress');
-const previewTime       = document.getElementById('previewTime');
+const ingestZone      = document.getElementById('ingestZone');
+const browseBtn       = document.getElementById('browseBtn');
+const fileInput       = document.getElementById('fileInput');
+const arrangementList = document.getElementById('arrangementList');
+const tempoSlider     = document.getElementById('tempoSlider');
+const tempoValue      = document.getElementById('tempoValue');
+const grooveSelect    = document.getElementById('grooveSelect');
+const grooveDesc      = document.getElementById('grooveDesc');
+const stitchBtn       = document.getElementById('stitchBtn');
+const downloadLink    = document.getElementById('downloadLink');
+const resetBtn        = document.getElementById('resetBtn');
+const statusBar       = document.getElementById('statusBar');
+const previewRow      = document.getElementById('previewRow');
+const playBtn         = document.getElementById('playBtn');
+const stopBtn         = document.getElementById('stopBtn');
+const previewProgress = document.getElementById('previewProgress');
+const previewTime     = document.getElementById('previewTime');
 
 const GROOVE_COPY = {
   lofi: "Laid-back boom-bap pocket. Kick on 1, snare dragged a hair behind the grid, loose 8th-note hats.",
-  synthwave: "Driving four-on-the-floor. Kick and hats locked dead to the quarter-note grid, driving synth bass.",
-  house: "Punchy 128 BPM 4-on-the-floor kick with offbeat open hats and crisp snare/clap accents.",
-  trap: "Heavy sub kick, sharp snare/clap on beat 3, and rolling 16th/32nd note hi-hat patterns.",
-  afrobeats: "Syncopated bounce with polyrhythmic rimshots and triplet-tinged hat movement.",
-  funk: "Tight 16th-note funk pocket with heavy ghost notes and syncopated snare accents.",
-  jazz: "Swung 8th-note ride rhythm with feathered kick on quarters and accent snare on 2 & 4.",
-  ambient: "Sparse pulse. Soft kick and distant hat every other bar, preserving open atmospheric space."
-};
-
-const SCALE_INTERVALS = {
-  chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-  major: [0, 2, 4, 5, 7, 9, 11],
-  minor: [0, 2, 3, 5, 7, 8, 10],
-  dorian: [0, 2, 3, 5, 7, 9, 10],
-  mixolydian: [0, 2, 4, 5, 7, 9, 10],
-  pentatonic_major: [0, 2, 4, 7, 9],
-  pentatonic_minor: [0, 3, 5, 7, 10]
+  synthwave: "Driving four-on-the-floor. Kick and hats locked dead to the quarter-note grid, no drag.",
+  ambient: "Sparse pulse. A soft kick and distant hat every other bar, lots of open space."
 };
 
 /* ============================================================
-   Utilities & Harmonization
+   Utilities
    ============================================================ */
 function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
 
@@ -700,27 +643,6 @@ function formatTime(seconds){
   const m = Math.floor(s / 60);
   const r = s % 60;
   return m + ':' + String(r).padStart(2, '0');
-}
-
-function quantizePitchToScale(midiPitch, rootNote, scaleKey){
-  if (scaleKey === 'chromatic') return midiPitch;
-  const scale = SCALE_INTERVALS[scaleKey] || SCALE_INTERVALS.major;
-  const pitchClass = (midiPitch - rootNote + 120) % 12;
-
-  let minDiff = Infinity;
-  let bestClass = pitchClass;
-
-  scale.forEach((allowed) => {
-    let diff = Math.abs(pitchClass - allowed);
-    if (diff > 6) diff = 12 - diff;
-    if (diff < minDiff){
-      minDiff = diff;
-      bestClass = allowed;
-    }
-  });
-
-  const octave = Math.floor((midiPitch - rootNote) / 12);
-  return clamp((octave * 12) + rootNote + bestClass, 12, 127);
 }
 
 function invalidateBuiltOutput(){
@@ -762,25 +684,28 @@ function humanizeVelocity(baseVelocity, downbeat){
    MIDI parsing / note density preview
    ============================================================ */
 async function parseMidiFile(file){
-  if (!Midi) throw new Error('MIDI library not loaded');
+  if (!Midi) throw new Error('MIDI library is not ready or failed to load');
   const buffer = await file.arrayBuffer();
-  const midi = new Midi(buffer);
+  const bytes = new Uint8Array(buffer);
+  const midi = new Midi(bytes);
+
   let duration = midi.duration;
   if (!duration || !isFinite(duration)){
-    duration = midi.tracks.reduce((max, t) => {
-      const trackEnd = t.notes.reduce((m, n) => Math.max(m, n.time + n.duration), 0);
+    duration = (midi.tracks || []).reduce((max, t) => {
+      const trackEnd = (t.notes || []).reduce((m, n) => Math.max(m, (n.time || 0) + (n.duration || 0)), 0);
       return Math.max(max, trackEnd);
     }, 0);
   }
-  const originalBpm = (midi.header.tempos[0] && midi.header.tempos[0].bpm) || 120;
-  return { midi, duration, originalBpm };
+
+  const originalBpm = (midi.header && midi.header.tempos && midi.header.tempos[0] && midi.header.tempos[0].bpm) || 120;
+  return { midi, duration: duration || 1, originalBpm };
 }
 
 function computeDensityBars(midi, duration, bucketCount){
   bucketCount = bucketCount || 20;
   const buckets = new Array(bucketCount).fill(0);
-  midi.tracks.forEach((t) => {
-    t.notes.forEach((n) => {
+  (midi.tracks || []).forEach((t) => {
+    (t.notes || []).forEach((n) => {
       const idx = duration > 0
         ? clamp(Math.floor((n.time / duration) * bucketCount), 0, bucketCount - 1)
         : 0;
@@ -810,13 +735,15 @@ function renderClipList(){
     const card = document.createElement('div');
     card.className = 'clip-card';
     card.dataset.clipId = clip.id;
+    const trackCount = (clip.midi.tracks || []).length;
+
     card.innerHTML =
       '<button type="button" class="drag-handle" aria-label="Reorder ' + escapeHtml(clip.name) + '">&#10241;&#10241;</button>' +
       '<div class="clip-info">' +
         '<div class="clip-index">' + String(i + 1).padStart(2, '0') + '</div>' +
         '<div class="clip-meta">' +
           '<div class="clip-name">' + escapeHtml(clip.name) + '</div>' +
-          '<div class="clip-sub">' + clip.duration.toFixed(1) + 's &middot; ' + Math.round(clip.originalBpm) + ' BPM &middot; ' + clip.midi.tracks.length + (clip.midi.tracks.length === 1 ? ' track' : ' tracks') + '</div>' +
+          '<div class="clip-sub">' + clip.duration.toFixed(1) + 's &middot; ' + Math.round(clip.originalBpm) + ' BPM &middot; ' + trackCount + (trackCount === 1 ? ' track' : ' tracks') + '</div>' +
         '</div>' +
         '<div class="density-bars">' + bars.map((h) => '<span style="height:' + Math.max(6, h) + '%"></span>').join('') + '</div>' +
       '</div>' +
@@ -897,9 +824,6 @@ function syncClipOrderFromDom(){
 const GM_KICK = 36;
 const GM_SNARE = 38;
 const GM_HIHAT = 42;
-const GM_OPEN_HH = 46;
-const GM_CLAP = 39;
-const GM_RIM = 37;
 
 function addDrumHit(track, note, time, velBase, allowSwing, extraLag){
   const swing = allowSwing ? swingDelta() : 0;
@@ -935,45 +859,6 @@ function applyGroovePattern(drumTrack, groove, totalDuration, bpm){
       }
       addDrumHit(drumTrack, GM_SNARE, barStart + 1 * beatLen, 0.8, false);
       addDrumHit(drumTrack, GM_SNARE, barStart + 3 * beatLen, 0.8, false);
-    } else if (groove === 'house'){
-      for (let b = 0; b < 4; b++){
-        addDrumHit(drumTrack, GM_KICK, barStart + b * beatLen, 0.92, false);
-        addDrumHit(drumTrack, GM_OPEN_HH, barStart + b * beatLen + beatLen / 2, 0.6, false);
-      }
-      addDrumHit(drumTrack, GM_CLAP, barStart + 1 * beatLen, 0.82, false);
-      addDrumHit(drumTrack, GM_CLAP, barStart + 3 * beatLen, 0.82, false);
-    } else if (groove === 'trap'){
-      addDrumHit(drumTrack, GM_KICK, barStart + 0 * beatLen, 0.95, false);
-      addDrumHit(drumTrack, GM_KICK, barStart + 2.5 * beatLen, 0.8, false);
-      addDrumHit(drumTrack, GM_CLAP, barStart + 2 * beatLen, 0.85, false);
-      for (let e = 0; e < 16; e++){
-        addDrumHit(drumTrack, GM_HIHAT, barStart + e * 0.25 * beatLen, e % 4 === 0 ? 0.6 : 0.35, false);
-      }
-    } else if (groove === 'afrobeats'){
-      addDrumHit(drumTrack, GM_KICK, barStart + 0 * beatLen, 0.88, true);
-      addDrumHit(drumTrack, GM_KICK, barStart + 1.5 * beatLen, 0.75, true);
-      addDrumHit(drumTrack, GM_KICK, barStart + 2.25 * beatLen, 0.7, true);
-      addDrumHit(drumTrack, GM_RIM, barStart + 0.75 * beatLen, 0.7, true);
-      addDrumHit(drumTrack, GM_RIM, barStart + 2 * beatLen, 0.8, true);
-      addDrumHit(drumTrack, GM_RIM, barStart + 3.25 * beatLen, 0.75, true);
-    } else if (groove === 'funk'){
-      addDrumHit(drumTrack, GM_KICK, barStart + 0 * beatLen, 0.9, true);
-      addDrumHit(drumTrack, GM_KICK, barStart + 2.5 * beatLen, 0.7, true);
-      addDrumHit(drumTrack, GM_SNARE, barStart + 1 * beatLen, 0.85, true);
-      addDrumHit(drumTrack, GM_SNARE, barStart + 3 * beatLen, 0.85, true);
-      addDrumHit(drumTrack, GM_SNARE, barStart + 1.75 * beatLen, 0.3, true);
-      for (let s = 0; s < 16; s++){
-        addDrumHit(drumTrack, GM_HIHAT, barStart + s * 0.25 * beatLen, s % 2 === 0 ? 0.5 : 0.25, true);
-      }
-    } else if (groove === 'jazz'){
-      for (let b = 0; b < 4; b++){
-        addDrumHit(drumTrack, GM_HIHAT, barStart + b * beatLen, 0.4, true);
-        if (b % 2 === 0){
-          addDrumHit(drumTrack, GM_HIHAT, barStart + b * beatLen + (beatLen * 0.66), 0.3, true);
-        }
-      }
-      addDrumHit(drumTrack, GM_SNARE, barStart + 1 * beatLen, 0.4, true);
-      addDrumHit(drumTrack, GM_SNARE, barStart + 3 * beatLen, 0.4, true);
     } else if (groove === 'ambient'){
       if (bar % 2 === 0){
         addDrumHit(drumTrack, GM_KICK, barStart, 0.5, true);
@@ -990,9 +875,6 @@ function buildStitchedMidi(){
   if (!Midi) throw new Error('MIDI library not loaded');
   const bpm = Number(tempoSlider.value);
   const groove = grooveSelect.value;
-  const keyRoot = parseInt(keyRootSelect.value, 10) || 0;
-  const scaleType = scaleTypeSelect.value;
-  const shouldEqualizeLengths = matchLengthToggle.checked;
 
   const output = new Midi();
   output.header.setTempo(bpm);
@@ -1011,92 +893,72 @@ function buildStitchedMidi(){
   const baseCrossfade = beatLen * 2;
   const clipCount = clips.length;
 
-  // Compute maximum scaled clip duration if length matching is enabled
-  const scaledDurations = clips.map((c) => Math.max(0.1, (c.duration || 1) * (c.originalBpm / bpm)));
-  const maxClipDuration = Math.max(...scaledDurations);
-
   let timelineCursor = 0;
 
   clips.forEach((clip, clipIndex) => {
     const tempoRatio = clip.originalBpm / bpm;
-    const originalScaledDuration = scaledDurations[clipIndex];
-    const targetClipDuration = shouldEqualizeLengths ? maxClipDuration : originalScaledDuration;
-    const crossfade = Math.min(baseCrossfade, targetClipDuration / 2);
+    const scaledClipDuration = Math.max(0.1, (clip.duration || 1) * tempoRatio);
+    const crossfade = Math.min(baseCrossfade, scaledClipDuration / 2);
 
     const clipStart = timelineCursor;
     let clipMaxTime = 0;
     let melodicIndex = 0;
 
-    // Calculate how many repetitions are needed to match maximum clip length
-    const loopCount = shouldEqualizeLengths
-      ? Math.max(1, Math.ceil(targetClipDuration / originalScaledDuration))
-      : 1;
+    (clip.midi.tracks || []).forEach((srcTrack) => {
+      const isDrumSource = srcTrack.channel === 9 || /drum|kit|perc/i.test(srcTrack.name || '');
 
-    for (let loop = 0; loop < loopCount; loop++){
-      const loopOffset = loop * originalScaledDuration;
+      (srcTrack.notes || []).forEach((note) => {
+        const scaledTime = note.time * tempoRatio;
+        const scaledDuration = Math.max(0.02, note.duration * tempoRatio);
+        const noteEnd = scaledTime + scaledDuration;
+        clipMaxTime = Math.max(clipMaxTime, noteEnd);
 
-      clip.midi.tracks.forEach((srcTrack) => {
-        const isDrumSource = srcTrack.channel === 9 || /drum|kit|perc/i.test(srcTrack.name || '');
+        const downbeat = isDownbeat(scaledTime, bpm);
+        let velocity = humanizeVelocity(note.velocity, downbeat);
 
-        srcTrack.notes.forEach((note) => {
-          const scaledTime = (note.time * tempoRatio) + loopOffset;
-          const scaledDuration = Math.max(0.02, note.duration * tempoRatio);
-          const noteEnd = scaledTime + scaledDuration;
-
-          if (scaledTime >= targetClipDuration) return;
-
-          clipMaxTime = Math.max(clipMaxTime, Math.min(noteEnd, targetClipDuration));
-
-          const downbeat = isDownbeat(scaledTime, bpm);
-          let velocity = humanizeVelocity(note.velocity, downbeat);
-
-          if (clipIndex > 0 && scaledTime < crossfade){
-            velocity *= clamp(scaledTime / crossfade, 0.35, 1);
+        if (clipIndex > 0 && scaledTime < crossfade){
+          velocity *= clamp(scaledTime / crossfade, 0.35, 1);
+        }
+        if (clipIndex < clipCount - 1){
+          const distFromEnd = scaledClipDuration - noteEnd;
+          if (distFromEnd < crossfade){
+            velocity *= clamp(distFromEnd / crossfade, 0.35, 1);
           }
-          if (clipIndex < clipCount - 1){
-            const distFromEnd = targetClipDuration - noteEnd;
-            if (distFromEnd < crossfade){
-              velocity *= clamp(distFromEnd / crossfade, 0.35, 1);
-            }
-          }
-          velocity = clamp(velocity, 0.12, 1);
+        }
+        velocity = clamp(velocity, 0.12, 1);
 
-          const placedTime = Math.max(0, clipStart + scaledTime + swingDelta());
+        const placedTime = Math.max(0, clipStart + scaledTime + swingDelta());
 
-          if (isDrumSource){
-            drumTrack.addNote({
-              midi: note.midi,
+        if (isDrumSource){
+          drumTrack.addNote({
+            midi: note.midi,
+            time: placedTime,
+            duration: scaledDuration,
+            velocity: velocity
+          });
+        } else {
+          melodyTrack.addNote({
+            midi: note.midi,
+            time: placedTime,
+            duration: scaledDuration,
+            velocity: velocity
+          });
+
+          melodicIndex++;
+          if (melodicIndex % 2 === 0){
+            const bassPitch = (note.midi % 12) + 36;
+            bassTrack.addNote({
+              midi: bassPitch,
               time: placedTime,
-              duration: scaledDuration,
-              velocity: velocity
+              duration: Math.min(scaledDuration * 1.5, 1.5),
+              velocity: clamp(velocity * 0.9, 0.2, 1)
             });
-          } else {
-            // Apply scale harmonization
-            const harmonizedMidi = quantizePitchToScale(note.midi, keyRoot, scaleType);
-
-            melodyTrack.addNote({
-              midi: harmonizedMidi,
-              time: placedTime,
-              duration: scaledDuration,
-              velocity: velocity
-            });
-
-            melodicIndex++;
-            if (melodicIndex % 2 === 0){
-              const bassPitch = ((harmonizedMidi - keyRoot + 120) % 12) + keyRoot + 36;
-              bassTrack.addNote({
-                midi: bassPitch,
-                time: placedTime,
-                duration: Math.min(scaledDuration * 1.5, 1.5),
-                velocity: clamp(velocity * 0.9, 0.2, 1)
-              });
-            }
           }
-        });
+        }
       });
-    }
+    });
 
-    if (clipMaxTime === 0) clipMaxTime = targetClipDuration;
+    if (clipMaxTime === 0) clipMaxTime = scaledClipDuration;
     const clipEnd = clipStart + Math.ceil(clipMaxTime);
 
     timelineCursor = clipIndex < clipCount - 1
@@ -1168,28 +1030,37 @@ function scheduleDrumHit(ctx, master, note, when){
     osc.connect(gain); gain.connect(master);
     osc.start(startAt); osc.stop(startAt + 0.24);
     activeAudioNodes.push(osc, gain);
-  } else if (note.midi === GM_SNARE || note.midi === GM_CLAP || note.midi === GM_RIM){
+  } else if (note.midi === GM_SNARE){
     const noise = ctx.createBufferSource();
     noise.buffer = createNoiseBuffer(ctx, 0.2);
     const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = note.midi === GM_RIM ? 2400 : 1800; bp.Q.value = 0.9;
+    bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.9;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(peak * 0.6, startAt);
     gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
     noise.connect(bp); bp.connect(gain); gain.connect(master);
     noise.start(startAt); noise.stop(startAt + 0.18);
     activeAudioNodes.push(noise, bp, gain);
-  } else {
+  } else if (note.midi === GM_HIHAT){
     const noise = ctx.createBufferSource();
-    noise.buffer = createNoiseBuffer(ctx, note.midi === GM_OPEN_HH ? 0.25 : 0.08);
+    noise.buffer = createNoiseBuffer(ctx, 0.08);
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass'; hp.frequency.value = 7000;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(peak * 0.35, startAt);
-    gain.gain.exponentialRampToValueAtTime(0.001, startAt + (note.midi === GM_OPEN_HH ? 0.22 : 0.06));
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.06);
     noise.connect(hp); hp.connect(gain); gain.connect(master);
-    noise.start(startAt); noise.stop(startAt + 0.25);
+    noise.start(startAt); noise.stop(startAt + 0.08);
     activeAudioNodes.push(noise, hp, gain);
+  } else {
+    const noise = ctx.createBufferSource();
+    noise.buffer = createNoiseBuffer(ctx, 0.1);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(peak * 0.4, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.1);
+    noise.connect(gain); gain.connect(master);
+    noise.start(startAt); noise.stop(startAt + 0.1);
+    activeAudioNodes.push(noise, gain);
   }
 }
 
@@ -1198,16 +1069,20 @@ function playPreview(){
   stopPreview();
 
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+
   const master = audioCtx.createGain();
   master.gain.value = 0.85;
   master.connect(audioCtx.destination);
 
   const when = audioCtx.currentTime + 0.08;
 
-  lastBuiltMidi.tracks.forEach((track) => {
+  (lastBuiltMidi.tracks || []).forEach((track) => {
     const isDrum = track.channel === 9;
     const voiceType = track.name === 'Auto Bassline' ? 'triangle' : 'sawtooth';
-    track.notes.forEach((note) => {
+    (track.notes || []).forEach((note) => {
       if (isDrum){
         scheduleDrumHit(audioCtx, master, note, when);
       } else {
@@ -1243,8 +1118,8 @@ function stopPreview(){
   previewEndTimeoutId = null;
 
   activeAudioNodes.forEach((node) => {
-    try { node.stop(); } catch (e){ /* ignored */ }
-    try { node.disconnect(); } catch (e){ /* ignored */ }
+    try { node.stop(); } catch (e){ }
+    try { node.disconnect(); } catch (e){ }
   });
   activeAudioNodes = [];
 
@@ -1325,9 +1200,6 @@ tempoSlider.addEventListener('input', () => {
   tempoValue.textContent = tempoSlider.value;
 });
 tempoSlider.addEventListener('change', invalidateBuiltOutput);
-keyRootSelect.addEventListener('change', invalidateBuiltOutput);
-scaleTypeSelect.addEventListener('change', invalidateBuiltOutput);
-matchLengthToggle.addEventListener('change', invalidateBuiltOutput);
 
 grooveSelect.addEventListener('change', () => {
   updateGrooveDesc();
@@ -1384,9 +1256,6 @@ resetBtn.addEventListener('click', () => {
 
   tempoSlider.value = 120;
   tempoValue.textContent = '120';
-  keyRootSelect.value = '0';
-  scaleTypeSelect.value = 'major';
-  matchLengthToggle.checked = true;
   grooveSelect.value = 'lofi';
   updateGrooveDesc();
 
