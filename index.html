@@ -384,6 +384,52 @@
   }
   #downloadLink[hidden]{ display:none; }
 
+  /* ---------- Preview ---------- */
+  .preview-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    background:var(--panel);
+    border:1px solid var(--hairline);
+    border-radius:12px;
+    padding:8px 10px;
+    min-height:52px;
+  }
+  .preview-btn{
+    flex:0 0 auto;
+    width:44px; height:44px;
+    border-radius:10px;
+    border:1px solid var(--hairline);
+    background:var(--panel-raised);
+    color:var(--ink);
+    font-size:15px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .preview-btn:active:not(:disabled){ border-color:var(--teal); color:var(--teal); }
+  .preview-btn:disabled{ color:var(--ink-dim); opacity:0.5; }
+
+  .preview-track{
+    flex:1 1 auto;
+    height:6px;
+    border-radius:3px;
+    background:var(--hairline);
+    overflow:hidden;
+  }
+  .preview-progress{
+    height:100%;
+    width:0%;
+    background:var(--teal);
+  }
+
+  .preview-time{
+    flex:0 0 auto;
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--ink-dim);
+    min-width:78px;
+    text-align:right;
+  }
+
   #resetBtn{
     background:transparent;
     color:var(--red);
@@ -474,6 +520,14 @@
       <div class="section-label">Output</div>
       <div class="actions">
         <button type="button" class="action-btn" id="stitchBtn" disabled>Stitch Arrangement</button>
+
+        <div class="preview-row" id="previewRow" hidden>
+          <button type="button" class="preview-btn" id="playBtn" aria-label="Play preview">&#9654;</button>
+          <button type="button" class="preview-btn" id="stopBtn" aria-label="Stop preview" disabled>&#9632;</button>
+          <div class="preview-track"><div class="preview-progress" id="previewProgress"></div></div>
+          <div class="preview-time" id="previewTime">0:00 / 0:00</div>
+        </div>
+
         <a id="downloadLink" download="stitched_multitrack_arrangement.mid" hidden>Download stitched_multitrack_arrangement.mid</a>
         <button type="button" class="action-btn" id="resetBtn">Reset Workspace</button>
       </div>
@@ -502,6 +556,15 @@ try {
 let clips = [];        // { id, name, midi, duration, originalBpm }
 let clipIdCounter = 0;
 let currentBlobUrl = null;
+let lastBuiltMidi = null;      // the tonejs Midi instance behind the last successful stitch
+let lastBuiltDuration = 0;     // seconds
+
+let audioCtx = null;
+let activeAudioNodes = [];
+let isPreviewPlaying = false;
+let previewRafId = null;
+let previewStartCtxTime = 0;
+let previewEndTimeoutId = null;
 
 /* ============================================================
    DOM refs
@@ -518,6 +581,11 @@ const stitchBtn       = document.getElementById('stitchBtn');
 const downloadLink    = document.getElementById('downloadLink');
 const resetBtn        = document.getElementById('resetBtn');
 const statusBar       = document.getElementById('statusBar');
+const previewRow      = document.getElementById('previewRow');
+const playBtn         = document.getElementById('playBtn');
+const stopBtn         = document.getElementById('stopBtn');
+const previewProgress = document.getElementById('previewProgress');
+const previewTime     = document.getElementById('previewTime');
 
 const GROOVE_COPY = {
   lofi: "Laid-back boom-bap pocket. Kick on 1, snare dragged a hair behind the grid, loose 8th-note hats.",
@@ -549,6 +617,28 @@ function updateStitchAvailability(){
 
 function updateGrooveDesc(){
   grooveDesc.textContent = GROOVE_COPY[grooveSelect.value] || '';
+}
+
+function formatTime(seconds){
+  const s = Math.max(0, Math.round(seconds || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m + ':' + String(r).padStart(2, '0');
+}
+
+// Called whenever the arrangement changes after a stitch already exists,
+// so a stale preview/download never lingers against a different arrangement.
+function invalidateBuiltOutput(){
+  stopPreview();
+  lastBuiltMidi = null;
+  lastBuiltDuration = 0;
+  previewRow.hidden = true;
+  if (currentBlobUrl){
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+  downloadLink.hidden = true;
+  downloadLink.removeAttribute('href');
 }
 
 /* ============================================================
@@ -643,6 +733,7 @@ function renderClipList(){
 
     card.querySelector('.remove-btn').addEventListener('click', () => {
       clips = clips.filter((c) => c.id !== clip.id);
+      invalidateBuiltOutput();
       renderClipList();
       updateStitchAvailability();
       ingestZone.classList.toggle('has-files', clips.length > 0);
@@ -702,6 +793,7 @@ function attachDragHandlers(cardEl){
 function syncClipOrderFromDom(){
   const orderedIds = Array.from(arrangementList.querySelectorAll('.clip-card')).map((el) => el.dataset.clipId);
   clips.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
+  invalidateBuiltOutput();
   renderClipList();
 }
 
@@ -779,9 +871,21 @@ function buildStitchedMidi(){
   drumTrack.name = 'Standard Drums';
   drumTrack.channel = 9; // GM Channel 10, 0-indexed
 
+  const beatLen = 60 / bpm;
+  const baseCrossfade = beatLen * 2; // ~2 beats of overlap glues consecutive clips together
+  const clipCount = clips.length;
+
   let timelineCursor = 0;
 
-  clips.forEach((clip) => {
+  clips.forEach((clip, clipIndex) => {
+    // Every clip is re-timed onto the SAME target-tempo grid, otherwise a clip
+    // authored at a different original BPM drifts against the chosen tempo and
+    // the generated groove, which is what made clips sound like separate songs.
+    const tempoRatio = clip.originalBpm / bpm;
+    const scaledClipDuration = Math.max(0.1, (clip.duration || 1) * tempoRatio);
+    const crossfade = Math.min(baseCrossfade, scaledClipDuration / 2);
+
+    const clipStart = timelineCursor;
     let clipMaxTime = 0;
     let melodicIndex = 0;
 
@@ -789,24 +893,41 @@ function buildStitchedMidi(){
       const isDrumSource = srcTrack.channel === 9 || /drum|kit|perc/i.test(srcTrack.name || '');
 
       srcTrack.notes.forEach((note) => {
-        const downbeat = isDownbeat(note.time, clip.originalBpm);
-        const velocity = humanizeVelocity(note.velocity, downbeat);
-        const placedTime = timelineCursor + note.time + swingDelta();
+        const scaledTime = note.time * tempoRatio;
+        const scaledDuration = Math.max(0.02, note.duration * tempoRatio);
+        const noteEnd = scaledTime + scaledDuration;
+        clipMaxTime = Math.max(clipMaxTime, noteEnd);
 
-        clipMaxTime = Math.max(clipMaxTime, note.time + note.duration);
+        const downbeat = isDownbeat(scaledTime, bpm);
+        let velocity = humanizeVelocity(note.velocity, downbeat);
+
+        // Fade this clip in where it overlaps the tail of the previous one
+        if (clipIndex > 0 && scaledTime < crossfade){
+          velocity *= clamp(scaledTime / crossfade, 0.35, 1);
+        }
+        // Fade this clip out where it overlaps the start of the next one
+        if (clipIndex < clipCount - 1){
+          const distFromEnd = scaledClipDuration - noteEnd;
+          if (distFromEnd < crossfade){
+            velocity *= clamp(distFromEnd / crossfade, 0.35, 1);
+          }
+        }
+        velocity = clamp(velocity, 0.12, 1);
+
+        const placedTime = Math.max(0, clipStart + scaledTime + swingDelta());
 
         if (isDrumSource){
           drumTrack.addNote({
             midi: note.midi,
-            time: Math.max(0, placedTime),
-            duration: note.duration,
+            time: placedTime,
+            duration: scaledDuration,
             velocity: velocity
           });
         } else {
           melodyTrack.addNote({
             midi: note.midi,
-            time: Math.max(0, placedTime),
-            duration: note.duration,
+            time: placedTime,
+            duration: scaledDuration,
             velocity: velocity
           });
 
@@ -816,8 +937,8 @@ function buildStitchedMidi(){
             const bassPitch = (note.midi % 12) + 36; // dropped to octave 2
             bassTrack.addNote({
               midi: bassPitch,
-              time: Math.max(0, placedTime),
-              duration: Math.min(note.duration * 1.5, 1.5),
+              time: placedTime,
+              duration: Math.min(scaledDuration * 1.5, 1.5),
               velocity: clamp(velocity * 0.9, 0.2, 1)
             });
           }
@@ -825,16 +946,181 @@ function buildStitchedMidi(){
       });
     });
 
-    if (clipMaxTime === 0) clipMaxTime = clip.duration || 1;
-    // Advance the cursor to the nearest ceiling integer of this clip's duration
-    timelineCursor += Math.ceil(clipMaxTime);
+    if (clipMaxTime === 0) clipMaxTime = scaledClipDuration;
+    const clipEnd = clipStart + Math.ceil(clipMaxTime);
+
+    // Every clip but the last hands off early into the next one's crossfade window;
+    // the last clip keeps its full tail so the song doesn't get cut short.
+    timelineCursor = clipIndex < clipCount - 1
+      ? Math.max(clipStart + 0.5, clipEnd - crossfade)
+      : clipEnd;
   });
 
+  // A continuous groove bed under the whole timeline is what makes the whole
+  // thing read as one song rather than clips playing back to back.
   applyGroovePattern(drumTrack, groove, timelineCursor, bpm);
 
   const bytes = output.toArray();
   const blob = new Blob([bytes], { type: 'audio/midi' });
-  return URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+
+  return { url, midi: output, duration: timelineCursor };
+}
+
+/* ============================================================
+   Preview playback (raw Web Audio API — no extra dependency)
+   ============================================================ */
+function midiToFreq(midiNote){
+  return 440 * Math.pow(2, (midiNote - 69) / 12);
+}
+
+function createNoiseBuffer(ctx, durationSeconds){
+  const size = Math.max(1, Math.floor(ctx.sampleRate * durationSeconds));
+  const buffer = ctx.createBuffer(1, size, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+  return buffer;
+}
+
+function scheduleMelodicNote(ctx, master, note, voiceType, when){
+  const startAt = when + note.time;
+  const dur = Math.max(0.05, note.duration);
+  const stopAt = startAt + dur;
+  const peak = clamp(note.velocity, 0.05, 1) * 0.28;
+  const attack = 0.012;
+  const release = Math.min(0.18, dur * 0.4);
+
+  const osc = ctx.createOscillator();
+  osc.type = voiceType;
+  osc.frequency.value = midiToFreq(note.midi);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, startAt);
+  gain.gain.linearRampToValueAtTime(peak, startAt + attack);
+  gain.gain.setValueAtTime(peak, Math.max(startAt + attack, stopAt - release));
+  gain.gain.linearRampToValueAtTime(0.0001, stopAt);
+
+  osc.connect(gain);
+  gain.connect(master);
+  osc.start(startAt);
+  osc.stop(stopAt + 0.03);
+  activeAudioNodes.push(osc, gain);
+}
+
+function scheduleDrumHit(ctx, master, note, when){
+  const startAt = when + note.time;
+  const peak = clamp(note.velocity, 0.05, 1);
+
+  if (note.midi === GM_KICK){
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, startAt);
+    osc.frequency.exponentialRampToValueAtTime(45, startAt + 0.12);
+    gain.gain.setValueAtTime(peak * 0.9, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.22);
+    osc.connect(gain); gain.connect(master);
+    osc.start(startAt); osc.stop(startAt + 0.24);
+    activeAudioNodes.push(osc, gain);
+  } else if (note.midi === GM_SNARE){
+    const noise = ctx.createBufferSource();
+    noise.buffer = createNoiseBuffer(ctx, 0.2);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.9;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(peak * 0.6, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
+    noise.connect(bp); bp.connect(gain); gain.connect(master);
+    noise.start(startAt); noise.stop(startAt + 0.18);
+    activeAudioNodes.push(noise, bp, gain);
+  } else if (note.midi === GM_HIHAT){
+    const noise = ctx.createBufferSource();
+    noise.buffer = createNoiseBuffer(ctx, 0.08);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 7000;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(peak * 0.35, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.06);
+    noise.connect(hp); hp.connect(gain); gain.connect(master);
+    noise.start(startAt); noise.stop(startAt + 0.08);
+    activeAudioNodes.push(noise, hp, gain);
+  } else {
+    const noise = ctx.createBufferSource();
+    noise.buffer = createNoiseBuffer(ctx, 0.1);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(peak * 0.4, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.1);
+    noise.connect(gain); gain.connect(master);
+    noise.start(startAt); noise.stop(startAt + 0.1);
+    activeAudioNodes.push(noise, gain);
+  }
+}
+
+function playPreview(){
+  if (!lastBuiltMidi) return;
+  stopPreview();
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const master = audioCtx.createGain();
+  master.gain.value = 0.85;
+  master.connect(audioCtx.destination);
+
+  const when = audioCtx.currentTime + 0.08;
+
+  lastBuiltMidi.tracks.forEach((track) => {
+    const isDrum = track.channel === 9;
+    const voiceType = track.name === 'Auto Bassline' ? 'triangle' : 'sawtooth';
+    track.notes.forEach((note) => {
+      if (isDrum){
+        scheduleDrumHit(audioCtx, master, note, when);
+      } else {
+        scheduleMelodicNote(audioCtx, master, note, voiceType, when);
+      }
+    });
+  });
+
+  isPreviewPlaying = true;
+  previewStartCtxTime = audioCtx.currentTime;
+  playBtn.disabled = true;
+  stopBtn.disabled = false;
+  previewRafId = requestAnimationFrame(tickPreview);
+
+  previewEndTimeoutId = setTimeout(stopPreview, (lastBuiltDuration + 0.6) * 1000);
+}
+
+function tickPreview(){
+  if (!isPreviewPlaying || !audioCtx) return;
+  const elapsed = audioCtx.currentTime - previewStartCtxTime;
+  const pct = clamp(elapsed / Math.max(0.01, lastBuiltDuration), 0, 1);
+  previewProgress.style.width = (pct * 100) + '%';
+  previewTime.textContent = formatTime(Math.min(elapsed, lastBuiltDuration)) + ' / ' + formatTime(lastBuiltDuration);
+  if (elapsed < lastBuiltDuration){
+    previewRafId = requestAnimationFrame(tickPreview);
+  }
+}
+
+function stopPreview(){
+  if (previewRafId) cancelAnimationFrame(previewRafId);
+  if (previewEndTimeoutId) clearTimeout(previewEndTimeoutId);
+  previewRafId = null;
+  previewEndTimeoutId = null;
+
+  activeAudioNodes.forEach((node) => {
+    try { node.stop(); } catch (e){ /* not a source node, or already stopped */ }
+    try { node.disconnect(); } catch (e){ /* ignore */ }
+  });
+  activeAudioNodes = [];
+
+  if (audioCtx){
+    audioCtx.close().catch(() => {});
+    audioCtx = null;
+  }
+
+  isPreviewPlaying = false;
+  playBtn.disabled = !lastBuiltMidi;
+  stopBtn.disabled = true;
+  previewProgress.style.width = '0%';
+  previewTime.textContent = '0:00 / ' + formatTime(lastBuiltDuration);
 }
 
 /* ============================================================
@@ -865,6 +1151,7 @@ fileInput.addEventListener('change', async (e) => {
 
   fileInput.value = '';
   ingestZone.classList.toggle('has-files', clips.length > 0);
+  invalidateBuiltOutput();
   renderClipList();
   updateStitchAvailability();
 
@@ -901,8 +1188,12 @@ ingestZone.addEventListener('drop', (e) => {
 tempoSlider.addEventListener('input', () => {
   tempoValue.textContent = tempoSlider.value;
 });
+tempoSlider.addEventListener('change', invalidateBuiltOutput);
 
-grooveSelect.addEventListener('change', updateGrooveDesc);
+grooveSelect.addEventListener('change', () => {
+  updateGrooveDesc();
+  invalidateBuiltOutput();
+});
 
 stitchBtn.addEventListener('click', () => {
   if (clips.length < 2){
@@ -910,18 +1201,29 @@ stitchBtn.addEventListener('click', () => {
     return;
   }
 
+  stopPreview();
   setStatus('Compiling multi-track arrangement...');
   stitchBtn.disabled = true;
 
   // Yield a frame so the status message paints before the synchronous work runs
   requestAnimationFrame(() => {
     try {
-      const url = buildStitchedMidi();
+      const result = buildStitchedMidi();
       if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-      currentBlobUrl = url;
-      downloadLink.href = url;
+      currentBlobUrl = result.url;
+      lastBuiltMidi = result.midi;
+      lastBuiltDuration = result.duration;
+
+      downloadLink.href = result.url;
       downloadLink.hidden = false;
-      setStatus('Stitched ' + clips.length + ' clips into one arrangement. Ready to export.', 'success');
+
+      previewRow.hidden = false;
+      playBtn.disabled = false;
+      stopBtn.disabled = true;
+      previewProgress.style.width = '0%';
+      previewTime.textContent = '0:00 / ' + formatTime(lastBuiltDuration);
+
+      setStatus('Stitched ' + clips.length + ' clips into one continuous arrangement (~' + formatTime(lastBuiltDuration) + '). Preview it, then export.', 'success');
     } catch (err){
       console.error(err);
       setStatus('Stitch failed: ' + err.message, 'error');
@@ -931,18 +1233,16 @@ stitchBtn.addEventListener('click', () => {
   });
 });
 
+playBtn.addEventListener('click', playPreview);
+stopBtn.addEventListener('click', stopPreview);
+
 resetBtn.addEventListener('click', () => {
   clips = [];
   clipIdCounter = 0;
   fileInput.value = '';
   ingestZone.classList.remove('has-files');
 
-  if (currentBlobUrl){
-    URL.revokeObjectURL(currentBlobUrl);
-    currentBlobUrl = null;
-  }
-  downloadLink.hidden = true;
-  downloadLink.removeAttribute('href');
+  invalidateBuiltOutput();
 
   tempoSlider.value = 120;
   tempoValue.textContent = '120';
