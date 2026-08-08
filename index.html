@@ -537,7 +537,7 @@
         <a id="downloadLink" download="stitched_multitrack_arrangement.mid" hidden>Download stitched_multitrack_arrangement.mid</a>
         <button type="button" class="action-btn" id="resetBtn">Reset Workspace</button>
       </div>
-      <div id="statusBar">Add two or more MIDI files to begin.</div>
+      <div id="statusBar">Loading MIDI library...</div>
     </section>
 
   </div>
@@ -546,28 +546,36 @@
 </div>
 
 <script type="module">
-let Midi;
+let MidiClass = null;
 
-// Helper to resolve exported Midi class regardless of CDN wrapping style
-function resolveMidiExport(mod) {
-  return mod.Midi || (mod.default && mod.default.Midi) || mod.default;
-}
+// Multi-CDN loader with export resolution logic
+async function loadMidiLibrary() {
+  const cdnUrls = [
+    "https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/+esm",
+    "https://unpkg.com/@tonejs/midi@2.0.28/dist/Midi.js",
+    "https://esm.sh/@tonejs/midi@2.0.28"
+  ];
 
-try {
-  const mod = await import("https://esm.sh/@tonejs/midi@2.0.28");
-  Midi = resolveMidiExport(mod);
-} catch (primaryErr) {
-  console.warn('esm.sh load failed, trying fallback CDN...', primaryErr);
-  try {
-    const mod = await import("https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/+esm");
-    Midi = resolveMidiExport(mod);
-  } catch (libErr) {
-    console.error('Failed to load @tonejs/midi from CDNs:', libErr);
-    const bar = document.getElementById('statusBar');
-    bar.textContent = 'Could not load the MIDI library. Import/export will not work until network is available.';
-    bar.classList.add('error');
+  for (const url of cdnUrls) {
+    try {
+      const mod = await import(url);
+      const Candidate = mod.Midi || mod.default?.Midi || mod.default;
+      if (typeof Candidate === 'function' || typeof Candidate === 'object') {
+        MidiClass = Candidate;
+        setStatus('Add two or more MIDI files to begin.');
+        return;
+      }
+    } catch (e) {
+      console.warn(`Failed loading @tonejs/midi from ${url}:`, e);
+    }
   }
+
+  const bar = document.getElementById('statusBar');
+  bar.textContent = 'Could not load MIDI library from CDNs. Check your network connection.';
+  bar.classList.add('error');
 }
+
+await loadMidiLibrary();
 
 /* ============================================================
    State
@@ -575,7 +583,7 @@ try {
 let clips = [];        // { id, name, midi, duration, originalBpm }
 let clipIdCounter = 0;
 let currentBlobUrl = null;
-let lastBuiltMidi = null;      // tonejs Midi instance
+let lastBuiltMidi = null;      // the tonejs Midi instance behind the last successful stitch
 let lastBuiltDuration = 0;     // seconds
 
 let audioCtx = null;
@@ -684,34 +692,44 @@ function humanizeVelocity(baseVelocity, downbeat){
    MIDI parsing / note density preview
    ============================================================ */
 async function parseMidiFile(file){
-  if (!Midi) throw new Error('MIDI library is not ready or failed to load');
+  if (!MidiClass) throw new Error('MIDI library is not ready or failed to load');
   const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  const midi = new Midi(bytes);
+  
+  let midi;
+  try {
+    midi = new MidiClass(buffer);
+  } catch (err) {
+    midi = new MidiClass(new Uint8Array(buffer));
+  }
 
   let duration = midi.duration;
   if (!duration || !isFinite(duration)){
     duration = (midi.tracks || []).reduce((max, t) => {
-      const trackEnd = (t.notes || []).reduce((m, n) => Math.max(m, (n.time || 0) + (n.duration || 0)), 0);
+      const notes = t.notes || [];
+      const trackEnd = notes.reduce((m, n) => Math.max(m, (n.time || 0) + (n.duration || 0)), 0);
       return Math.max(max, trackEnd);
     }, 0);
   }
 
-  const originalBpm = (midi.header && midi.header.tempos && midi.header.tempos[0] && midi.header.tempos[0].bpm) || 120;
-  return { midi, duration: duration || 1, originalBpm };
+  const firstTempo = midi.header?.tempos?.[0]?.bpm;
+  const originalBpm = (typeof firstTempo === 'number' && firstTempo > 0) ? firstTempo : 120;
+  
+  return { midi, duration, originalBpm };
 }
 
 function computeDensityBars(midi, duration, bucketCount){
   bucketCount = bucketCount || 20;
   const buckets = new Array(bucketCount).fill(0);
+  
   (midi.tracks || []).forEach((t) => {
     (t.notes || []).forEach((n) => {
       const idx = duration > 0
-        ? clamp(Math.floor((n.time / duration) * bucketCount), 0, bucketCount - 1)
+        ? clamp(Math.floor(((n.time || 0) / duration) * bucketCount), 0, bucketCount - 1)
         : 0;
       buckets[idx]++;
     });
   });
+  
   const max = Math.max(1, ...buckets);
   return buckets.map((b) => Math.round((b / max) * 100));
 }
@@ -735,8 +753,9 @@ function renderClipList(){
     const card = document.createElement('div');
     card.className = 'clip-card';
     card.dataset.clipId = clip.id;
-    const trackCount = (clip.midi.tracks || []).length;
-
+    
+    const trackCount = clip.midi.tracks ? clip.midi.tracks.length : 0;
+    
     card.innerHTML =
       '<button type="button" class="drag-handle" aria-label="Reorder ' + escapeHtml(clip.name) + '">&#10241;&#10241;</button>' +
       '<div class="clip-info">' +
@@ -797,7 +816,7 @@ function attachDragHandlers(cardEl){
     };
 
     const onUp = () => {
-      try { cardEl.releasePointerCapture(evt.pointerId); } catch (e) { /* released */ }
+      try { cardEl.releasePointerCapture(evt.pointerId); } catch (e) {}
       cardEl.classList.remove('dragging');
       cardEl.removeEventListener('pointermove', onMove);
       cardEl.removeEventListener('pointerup', onUp);
@@ -872,11 +891,11 @@ function applyGroovePattern(drumTrack, groove, totalDuration, bpm){
    Stitch engine
    ============================================================ */
 function buildStitchedMidi(){
-  if (!Midi) throw new Error('MIDI library not loaded');
+  if (!MidiClass) throw new Error('MIDI library not loaded');
   const bpm = Number(tempoSlider.value);
   const groove = grooveSelect.value;
 
-  const output = new Midi();
+  const output = new MidiClass();
   output.header.setTempo(bpm);
 
   const melodyTrack = output.addTrack();
@@ -1069,10 +1088,6 @@ function playPreview(){
   stopPreview();
 
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
-
   const master = audioCtx.createGain();
   master.gain.value = 0.85;
   master.connect(audioCtx.destination);
@@ -1118,8 +1133,8 @@ function stopPreview(){
   previewEndTimeoutId = null;
 
   activeAudioNodes.forEach((node) => {
-    try { node.stop(); } catch (e){ }
-    try { node.disconnect(); } catch (e){ }
+    try { node.stop(); } catch (e){}
+    try { node.disconnect(); } catch (e){}
   });
   activeAudioNodes = [];
 
@@ -1157,6 +1172,7 @@ fileInput.addEventListener('change', async (e) => {
         originalBpm
       });
     } catch (err){
+      console.error(err);
       setStatus('Could not read "' + file.name + '": ' + err.message, 'error');
     }
   }
