@@ -2,549 +2,168 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#100E0B">
-<title>Smart Multi-Track MIDI Stitcher</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MIDI Stitcher</title>
 <style>
   :root{
-    --bg:#100E0B;
-    --panel:#1B1712;
-    --panel-raised:#241F18;
-    --hairline:#382F23;
-    --ink:#F4EEE2;
-    --ink-dim:#A79C89;
-    --amber:#E8A33D;
-    --amber-dim:#8C6526;
-    --teal:#3FA796;
-    --red:#D9553D;
-    --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-    --font-mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+    --bg:#1a1a24; --surface:#22222e; --surface2:#2a2a38; --border:#38384a;
+    --text:#e8e8f0; --muted:#8888a0; --amber:#e8a838; --teal:#38d4b0; --red:#d85550; --blue:#4878d8;
   }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px;max-width:680px;margin:0 auto;touch-action:manipulation}
+  h1{font-size:22px;margin-bottom:6px;font-weight:700}
+  h1+span{color:var(--muted);font-size:13px;display:block;margin-bottom:20px}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+  .section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px}
 
-  *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+  /* Ingest */
+  .ingest-zone{border:2px dashed var(--border);border-radius:10px;padding:24px;text-align:center;transition:border-color .2s}
+  .ingest-zone.drag-over{border-color:var(--amber);background:rgba(232,168,56,.06)}
+  .ingest-zone.has-files{border-style:solid;border-color:var(--teal)}
+  .ingest-zone p{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .btn-browse{background:var(--amber);color:#1a1a24;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;min-width:44px}
+  .btn-browse:active{transform:scale(.97)}
+  input[type=file]{display:none}
 
-  html, body{
-    height:100%;
-    margin:0;
-    background:var(--bg);
-    color:var(--ink);
-    font-family:var(--font-ui);
-    overscroll-behavior:none;
-    overflow:hidden;
-    position:fixed;
-    inset:0;
-    touch-action:manipulation;
-    -webkit-user-select:none;
-    user-select:none;
-  }
+  /* Clip cards */
+  .clip-card{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;transition:border-color .15s}
+  .clip-card.dragging{border-color:var(--amber);opacity:.8}
+  .drag-handle{cursor:grab;background:none;border:none;color:var(--muted);font-size:18px;padding:4px 8px;min-height:44px;min-width:44px}
+  .drag-handle:active{cursor:grabbing}
+  .clip-info{flex:1;display:flex;align-items:center;gap:10px;min-width:0}
+  .clip-index{font-size:11px;font-weight:700;color:var(--muted);background:var(--bg);border-radius:4px;padding:2px 6px;flex-shrink:0}
+  .clip-meta{flex:1;min-width:0}
+  .clip-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .clip-sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .density-bars{display:flex;align-items:flex-end;gap:1px;height:28px;width:80px;flex-shrink:0}
+  .density-bars span{flex:1;background:var(--blue);opacity:.6;border-radius:1px;min-height:2px}
+  .remove-btn{background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;padding:4px 8px;min-height:44px;min-width:44px}
+  .placeholder{color:var(--muted);font-size:13px;text-align:center;padding:20px}
 
-  input, select{
-    -webkit-user-select:auto;
-    user-select:auto;
-  }
+  /* Mode toggle */
+  .mode-toggle{display:flex;gap:0;margin-bottom:10px;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+  .mode-btn{flex:1;padding:10px 16px;border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;min-height:44px}
+  .mode-btn.active{background:var(--amber);color:#1a1a24}
+  .mode-desc{font-size:12px;color:var(--muted);line-height:1.4;padding:0 4px}
 
-  #app{
-    position:absolute;
-    inset:0;
-    display:flex;
-    flex-direction:column;
-    overflow:hidden;
-  }
+  /* Controls */
+  .control-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .control-row label{font-size:13px;font-weight:500;flex-shrink:0}
+  .control-row label .value{color:var(--muted);font-size:12px;font-weight:400}
+  .control-row select,.control-row input[type=range],.control-row input[type=number]{
+    background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;min-height:44px}
+  .control-row input[type=range]{flex:1;max-width:260px;-webkit-appearance:none;height:6px;border-radius:3px;background:var(--border)}
+  .control-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--amber);cursor:pointer}
+  .control-row select{flex:1;max-width:260px;min-width:160px;cursor:pointer}
+  .tempo-input-group{display:flex;align-items:center;gap:6px;flex:1;max-width:260px}
+  .tempo-input-group input[type=number]{width:70px;text-align:center}
+  .groove-desc{font-size:12px;color:var(--muted);line-height:1.4;margin-top:6px}
 
-  /* ---------- Header ---------- */
-  header{
-    flex:0 0 auto;
-    padding:18px 20px 14px;
-    border-bottom:1px solid var(--hairline);
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-    background:linear-gradient(180deg, #15120D 0%, #100E0B 100%);
-  }
+  /* Output */
+  .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .action-btn{background:var(--blue);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;transition:background .15s}
+  .action-btn:active{transform:scale(.97)}
+  .action-btn:disabled{opacity:.4;cursor:default}
+  #stitchBtn{background:var(--teal)}
+  #resetBtn{background:transparent;border:1px solid var(--border);color:var(--muted)}
+  #resetBtn:active{background:var(--surface2)}
 
-  .brand{ display:flex; align-items:center; gap:12px; min-width:0; }
+  .preview-row{display:flex;align-items:center;gap:8px;width:100%;margin-top:8px}
+  .preview-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:50%;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .preview-btn:disabled{opacity:.4}
+  .preview-track{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+  .preview-progress{height:100%;background:var(--teal);width:0%;transition:width .1s linear}
+  .preview-time{font-size:11px;color:var(--muted);white-space:nowrap}
 
-  .brand-mark{
-    width:40px; height:40px; flex:0 0 auto;
-    border-radius:8px;
-    background:
-      repeating-linear-gradient(90deg, var(--amber) 0 3px, transparent 3px 7px);
-    background-color:#2A2216;
-    border:1px solid var(--amber-dim);
-    position:relative;
-    overflow:hidden;
-  }
-  .brand-mark::after{
-    content:"";
-    position:absolute; left:0; right:0; top:50%;
-    height:1px; background:var(--amber-dim);
-  }
-
-  .brand-text{ min-width:0; }
-  .brand-text h1{
-    margin:0; font-size:17px; font-weight:700; letter-spacing:0.02em;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  .brand-text p{
-    margin:2px 0 0; font-size:12px; color:var(--ink-dim); font-family:var(--font-mono);
-    letter-spacing:0.03em;
-  }
-
-  .vu{
-    display:flex; align-items:flex-end; gap:3px; height:22px; flex:0 0 auto;
-  }
-  .vu span{
-    width:4px; border-radius:1px;
-    background:var(--amber-dim);
-    animation:vu-bounce 1.6s ease-in-out infinite;
-  }
-  .vu span:nth-child(1){ height:40%; animation-delay:-1.1s; }
-  .vu span:nth-child(2){ height:75%; animation-delay:-0.4s; background:var(--amber); }
-  .vu span:nth-child(3){ height:55%; animation-delay:-0.9s; }
-  .vu span:nth-child(4){ height:90%; animation-delay:-0.2s; background:var(--teal); }
-  .vu span:nth-child(5){ height:30%; animation-delay:-1.4s; }
-  @keyframes vu-bounce{
-    0%, 100%{ transform:scaleY(0.4); }
-    50%{ transform:scaleY(1); }
-  }
-  @media (prefers-reduced-motion: reduce){
-    .vu span{ animation:none; }
-  }
-
-  /* ---------- Scroll body ---------- */
-  #scrollBody{
-    flex:1 1 auto;
-    overflow-y:auto;
-    -webkit-overflow-scrolling:touch;
-    overscroll-behavior:contain;
-    touch-action:pan-y;
-    padding:16px 16px 24px;
-  }
-
-  section{ margin-bottom:18px; }
-
-  .section-label{
-    font-family:var(--font-mono);
-    font-size:11px;
-    letter-spacing:0.12em;
-    text-transform:uppercase;
-    color:var(--ink-dim);
-    margin:0 2px 8px;
-    display:flex;
-    align-items:center;
-    gap:8px;
-  }
-  .section-label::after{
-    content:"";
-    flex:1 1 auto;
-    height:1px;
-    background:var(--hairline);
-  }
-
-  /* ---------- Ingestion zone ---------- */
-  #ingestZone{
-    border:1.5px dashed var(--hairline);
-    border-radius:14px;
-    background:var(--panel);
-    padding:22px 16px;
-    text-align:center;
-    transition:opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-    min-height:48px;
-  }
-  #ingestZone.has-files{
-    opacity:0.72;
-    border-color:var(--amber-dim);
-  }
-  #ingestZone.drag-over{
-    border-color:var(--amber);
-    background:var(--panel-raised);
-  }
-  #ingestZone .ingest-icon{
-    font-size:26px; margin-bottom:6px; color:var(--amber);
-  }
-  #ingestZone h2{
-    margin:0 0 4px; font-size:15px; font-weight:600;
-  }
-  #ingestZone p{
-    margin:0; font-size:12.5px; color:var(--ink-dim);
-  }
-  #fileInput{ display:none; }
-
-  .btn-browse{
-    display:inline-flex; align-items:center; justify-content:center;
-    margin-top:12px; padding:0 20px; height:48px; min-height:48px;
-    border-radius:10px; border:1px solid var(--amber-dim);
-    background:var(--panel-raised); color:var(--ink);
-    font-size:14px; font-weight:600; font-family:var(--font-ui);
-  }
-  .btn-browse:active{ background:#2E2617; }
-
-  /* ---------- Arrangement list ---------- */
-  #arrangementList{
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-  }
-
-  .placeholder{
-    padding:26px 14px;
-    text-align:center;
-    color:var(--ink-dim);
-    font-size:13px;
-    border:1px solid var(--hairline);
-    border-radius:12px;
-    background:var(--panel);
-  }
-
-  .clip-card{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    min-height:64px;
-    padding:8px 10px;
-    background:var(--panel);
-    border:1px solid var(--hairline);
-    border-radius:12px;
-    touch-action:pan-y;
-    position:relative;
-  }
-  .clip-card.dragging{
-    z-index:20;
-    border-color:var(--amber);
-    background:var(--panel-raised);
-    box-shadow:0 10px 24px rgba(0,0,0,0.45);
-  }
-
-  .drag-handle{
-    flex:0 0 auto;
-    width:48px; height:48px;
-    border-radius:8px;
-    border:none;
-    background:transparent;
-    color:var(--ink-dim);
-    font-size:18px;
-    letter-spacing:-2px;
-    touch-action:none;
-    display:flex; align-items:center; justify-content:center;
-  }
-  .drag-handle:active{ color:var(--amber); }
-
-  .clip-info{
-    flex:1 1 auto;
-    min-width:0;
-    display:flex;
-    align-items:center;
-    gap:10px;
-  }
-
-  .clip-index{
-    flex:0 0 auto;
-    font-family:var(--font-mono);
-    font-size:12px;
-    color:var(--amber);
-    background:rgba(232,163,61,0.1);
-    border:1px solid var(--amber-dim);
-    border-radius:6px;
-    padding:3px 6px;
-  }
-
-  .clip-meta{ min-width:0; flex:1 1 auto; }
-  .clip-name{
-    font-size:14px; font-weight:600;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  .clip-sub{
-    font-size:11px; color:var(--ink-dim); font-family:var(--font-mono);
-    margin-top:2px;
-  }
-
-  .density-bars{
-    flex:0 0 auto;
-    display:flex;
-    align-items:flex-end;
-    gap:2px;
-    width:70px;
-    height:32px;
-  }
-  .density-bars span{
-    width:2.5px;
-    background:var(--teal);
-    opacity:0.75;
-    border-radius:1px;
-  }
-
-  .remove-btn{
-    flex:0 0 auto;
-    width:44px; height:44px;
-    border-radius:8px;
-    border:none;
-    background:transparent;
-    color:var(--ink-dim);
-    font-size:15px;
-  }
-  .remove-btn:active{ color:var(--red); }
-
-  /* ---------- Controls ---------- */
-  .control-row{
-    background:var(--panel);
-    border:1px solid var(--hairline);
-    border-radius:12px;
-    padding:14px;
-    margin-bottom:10px;
-  }
-  .control-row label{
-    display:flex; align-items:center; justify-content:space-between;
-    font-size:13px; font-weight:600; margin-bottom:8px;
-  }
-  .control-row label .value{
-    font-family:var(--font-mono); color:var(--amber); font-size:13px;
-  }
-
-  input[type="range"]{
-    -webkit-appearance:none;
-    width:100%;
-    height:48px;
-    background:transparent;
-  }
-  input[type="range"]::-webkit-slider-runnable-track{
-    height:6px;
-    border-radius:3px;
-    background:var(--hairline);
-  }
-  input[type="range"]::-webkit-slider-thumb{
-    -webkit-appearance:none;
-    width:26px; height:26px;
-    margin-top:-10px;
-    border-radius:50%;
-    background:var(--amber);
-    border:2px solid #100E0B;
-    box-shadow:0 0 0 1px var(--amber-dim);
-  }
-
-  select{
-    width:100%;
-    height:48px;
-    min-height:48px;
-    border-radius:10px;
-    border:1px solid var(--hairline);
-    background:var(--panel-raised);
-    color:var(--ink);
-    font-size:14px;
-    font-family:var(--font-ui);
-    padding:0 12px;
-  }
-
-  .groove-desc{
-    margin:8px 2px 0;
-    font-size:11.5px;
-    color:var(--ink-dim);
-    line-height:1.4;
-  }
-
-  /* ---------- Action buttons ---------- */
-  .actions{
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-  }
-
-  button.action-btn{
-    min-height:52px;
-    border-radius:12px;
-    border:none;
-    font-size:15px;
-    font-weight:700;
-    font-family:var(--font-ui);
-    letter-spacing:0.01em;
-  }
-
-  #stitchBtn{
-    background:linear-gradient(180deg, #F0B156, var(--amber));
-    color:#231704;
-  }
-  #stitchBtn:active{ filter:brightness(0.92); }
-  #stitchBtn:disabled{
-    background:var(--panel-raised);
-    color:var(--ink-dim);
-  }
-
-  #downloadLink{
-    display:flex; align-items:center; justify-content:center;
-    min-height:52px;
-    border-radius:12px;
-    background:var(--teal);
-    color:#08211D;
-    font-weight:700;
-    font-size:15px;
-    text-decoration:none;
-  }
-  #downloadLink[hidden]{ display:none; }
-
-  /* ---------- Preview ---------- */
-  .preview-row{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    background:var(--panel);
-    border:1px solid var(--hairline);
-    border-radius:12px;
-    padding:8px 10px;
-    min-height:52px;
-  }
-  .preview-btn{
-    flex:0 0 auto;
-    width:44px; height:44px;
-    border-radius:10px;
-    border:1px solid var(--hairline);
-    background:var(--panel-raised);
-    color:var(--ink);
-    font-size:15px;
-    display:flex; align-items:center; justify-content:center;
-  }
-  .preview-btn:active:not(:disabled){ border-color:var(--teal); color:var(--teal); }
-  .preview-btn:disabled{ color:var(--ink-dim); opacity:0.5; }
-
-  .preview-track{
-    flex:1 1 auto;
-    height:6px;
-    border-radius:3px;
-    background:var(--hairline);
-    overflow:hidden;
-  }
-  .preview-progress{
-    height:100%;
-    width:0%;
-    background:var(--teal);
-  }
-
-  .preview-time{
-    flex:0 0 auto;
-    font-family:var(--font-mono);
-    font-size:11px;
-    color:var(--ink-dim);
-    min-width:78px;
-    text-align:right;
-  }
-
-  #resetBtn{
-    background:transparent;
-    color:var(--red);
-    border:1px solid var(--red);
-  }
-  #resetBtn:active{ background:rgba(217,85,61,0.12); }
-
-  /* ---------- Status ---------- */
-  #statusBar{
-    margin-top:4px;
-    padding:10px 12px;
-    border-radius:10px;
-    background:var(--panel);
-    border:1px solid var(--hairline);
-    font-size:12.5px;
-    font-family:var(--font-mono);
-    color:var(--ink-dim);
-    min-height:20px;
-  }
-  #statusBar.error{ color:var(--red); border-color:var(--red); }
-  #statusBar.success{ color:var(--teal); border-color:var(--teal); }
-
-  footer{
-    flex:0 0 auto;
-    padding:8px 16px calc(10px + env(safe-area-inset-bottom));
-    font-size:10.5px;
-    color:var(--ink-dim);
-    text-align:center;
-    font-family:var(--font-mono);
-    border-top:1px solid var(--hairline);
-  }
+  #downloadLink{display:inline-block;padding:10px 18px;background:var(--amber);color:#1a1a24;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;min-height:44px;display:flex;align-items:center}
+  #statusBar{margin-top:10px;padding:8px 12px;font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:6px;min-height:40px}
+  #statusBar.error{color:var(--red);border-color:var(--red)}
+  #statusBar.success{color:var(--teal);border-color:var(--teal)}
+  footer{text-align:center;color:var(--muted);font-size:11px;margin-top:20px}
 </style>
 </head>
 <body>
-<div id="app">
+<h1>MIDI Stitcher</h1>
+<span>Import, arrange &amp; combine MIDI clips with intelligent harmonic analysis</span>
 
-  <header>
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true"></div>
-      <div class="brand-text">
-        <h1>MIDI Stitcher</h1>
-        <p>multi-track arrangement bench</p>
-      </div>
+<div class="panel">
+  <div class="section-label">Import MIDI Files</div>
+  <div class="ingest-zone" id="ingestZone">
+    <p>Drag &amp; drop <code>.mid</code> files here, or</p>
+    <button type="button" class="btn-browse" id="browseBtn">Choose Files</button>
+    <input type="file" id="fileInput" multiple accept=".mid,.midi,audio/midi,audio/x-midi,application/x-midi">
+  </div>
+</div>
+
+<div class="panel">
+  <div class="section-label">Arrangement Timeline</div>
+  <div id="arrangementList"></div>
+</div>
+
+<div class="panel">
+  <div class="section-label">Mode</div>
+  <div class="mode-toggle" id="modeToggle">
+    <button type="button" class="mode-btn active" data-mode="stitch">Stitch (Sequential)</button>
+    <button type="button" class="mode-btn" data-mode="merge">Merge (Layered)</button>
+  </div>
+  <p class="mode-desc" id="modeDesc"></p>
+</div>
+
+<div class="panel">
+  <div class="section-label">Session Settings</div>
+
+  <div class="control-row">
+    <label for="tempoSlider">Tempo <span class="value"><span id="tempoValue">120</span> BPM</span></label>
+    <div class="tempo-input-group">
+      <input type="range" id="tempoSlider" min="40" max="220" step="1" value="120">
+      <input type="number" id="tempoNumber" min="40" max="220" step="1" value="120">
     </div>
-    <div class="vu" aria-hidden="true">
-      <span></span><span></span><span></span><span></span><span></span>
-    </div>
-  </header>
-
-  <div id="scrollBody">
-
-    <section>
-      <div class="section-label">Import</div>
-      <div id="ingestZone">
-        <div class="ingest-icon">&#9835;</div>
-        <h2>Add MIDI clips</h2>
-        <p>Tap below to choose two or more .mid files from your library</p>
-        <button type="button" class="btn-browse" id="browseBtn">Choose Files</button>
-        <input type="file" id="fileInput" multiple accept=".mid,.midi,audio/midi,audio/x-midi,application/x-midi">
-      </div>
-    </section>
-
-    <section>
-      <div class="section-label">Arrangement Timeline</div>
-      <div id="arrangementList"></div>
-    </section>
-
-    <section>
-      <div class="section-label">Session Settings</div>
-
-      <div class="control-row">
-        <label for="tempoSlider">Tempo <span class="value"><span id="tempoValue">120</span> BPM</span></label>
-        <input type="range" id="tempoSlider" min="60" max="180" step="1" value="120">
-      </div>
-
-      <div class="control-row">
-        <label for="grooveSelect">Groove Profile</label>
-        <select id="grooveSelect">
-          <option value="lofi">Lo-Fi Hip Hop</option>
-          <option value="synthwave">Synthwave</option>
-          <option value="ambient">Ambient</option>
-        </select>
-        <p class="groove-desc" id="grooveDesc"></p>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-label">Output</div>
-      <div class="actions">
-        <button type="button" class="action-btn" id="stitchBtn" disabled>Stitch Arrangement</button>
-
-        <div class="preview-row" id="previewRow" hidden>
-          <button type="button" class="preview-btn" id="playBtn" aria-label="Play preview">&#9654;</button>
-          <button type="button" class="preview-btn" id="stopBtn" aria-label="Stop preview" disabled>&#9632;</button>
-          <div class="preview-track"><div class="preview-progress" id="previewProgress"></div></div>
-          <div class="preview-time" id="previewTime">0:00 / 0:00</div>
-        </div>
-
-        <a id="downloadLink" download="stitched_multitrack_arrangement.mid" hidden>Download stitched_multitrack_arrangement.mid</a>
-        <button type="button" class="action-btn" id="resetBtn">Reset Workspace</button>
-      </div>
-      <div id="statusBar">Add two or more MIDI files to begin.</div>
-    </section>
-
   </div>
 
-  <footer>Runs entirely in this page &middot; nothing is uploaded anywhere</footer>
+  <div class="control-row">
+    <label for="grooveSelect">Rhythm Style</label>
+    <select id="grooveSelect">
+      <option value="lofi">Lo-Fi Hip Hop</option>
+      <option value="boombap">Boom Bap</option>
+      <option value="trap">Trap</option>
+      <option value="synthwave">Synthwave</option>
+      <option value="poprock">Pop Rock</option>
+      <option value="latin">Latin</option>
+      <option value="rnb">R&amp;B / Neo-Soul</option>
+      <option value="cinematic">Cinematic</option>
+      <option value="ambient">Ambient</option>
+    </select>
+    <p class="groove-desc" id="grooveDesc"></p>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="section-label">Output</div>
+  <div class="actions">
+    <button type="button" class="action-btn" id="stitchBtn" disabled>Stitch Arrangement</button>
+
+    <div class="preview-row" id="previewRow" hidden>
+      <button type="button" class="preview-btn" id="playBtn" aria-label="Play preview">&#9654;</button>
+      <button type="button" class="preview-btn" id="stopBtn" aria-label="Stop preview" disabled>&#9632;</button>
+      <div class="preview-track"><div class="preview-progress" id="previewProgress"></div></div>
+      <div class="preview-time" id="previewTime">0:00 / 0:00</div>
+    </div>
+
+    <a id="downloadLink" download="stitched_multitrack_arrangement.mid" hidden>Download stitched_multitrack_arrangement.mid</a>
+    <button type="button" class="action-btn" id="resetBtn">Reset Workspace</button>
+  </div>
+  <div id="statusBar">Add two or more MIDI files to begin.</div>
+</div>
+
+<footer>Runs entirely in this page &middot; nothing is uploaded anywhere</footer>
 </div>
 
 <script type="module">
 // ============================================================
-// MIDI Stitcher — Advanced Musicological Engine v2.0
-// Implements: Krumhansl-Schmuckler key detection, Circle of
-// Fifths modulation bridges, Huron pitch proximity, KTH/Sundberg
-// humanization, Gaussian micro-timing & velocity.
+// MIDI Stitcher v4.0 — Musicality Engine
+// Generates bass + chord pads, enriches sparse melodies,
+// shapes velocity phrases, creates varied drum patterns with fills.
+// All tracks synced to equal length.
 // ============================================================
 
 import { Midi } from "https://esm.sh/@tonejs/midi@2.0.28";
@@ -557,6 +176,7 @@ let clipIdCounter = 0;
 let currentBlobUrl = null;
 let lastBuiltMidi = null;
 let lastBuiltDuration = 0;
+let mode = 'stitch';
 
 let audioCtx = null;
 let activeAudioNodes = [];
@@ -566,96 +186,117 @@ let previewStartCtxTime = 0;
 let previewEndTimeoutId = null;
 
 /* ============================================================
-   DOM REFS
+   DOM
    ============================================================ */
-const ingestZone      = document.getElementById('ingestZone');
-const browseBtn       = document.getElementById('browseBtn');
-const fileInput       = document.getElementById('fileInput');
+const ingestZone = document.getElementById('ingestZone');
+const browseBtn = document.getElementById('browseBtn');
+const fileInput = document.getElementById('fileInput');
 const arrangementList = document.getElementById('arrangementList');
-const tempoSlider     = document.getElementById('tempoSlider');
-const tempoValue      = document.getElementById('tempoValue');
-const grooveSelect    = document.getElementById('grooveSelect');
-const grooveDesc      = document.getElementById('grooveDesc');
-const stitchBtn       = document.getElementById('stitchBtn');
-const downloadLink    = document.getElementById('downloadLink');
-const resetBtn        = document.getElementById('resetBtn');
-const statusBar       = document.getElementById('statusBar');
-const previewRow      = document.getElementById('previewRow');
-const playBtn         = document.getElementById('playBtn');
-const stopBtn         = document.getElementById('stopBtn');
+const modeToggle = document.getElementById('modeToggle');
+const modeDesc = document.getElementById('modeDesc');
+const tempoSlider = document.getElementById('tempoSlider');
+const tempoValue = document.getElementById('tempoValue');
+const tempoNumber = document.getElementById('tempoNumber');
+const grooveSelect = document.getElementById('grooveSelect');
+const grooveDesc = document.getElementById('grooveDesc');
+const stitchBtn = document.getElementById('stitchBtn');
+const downloadLink = document.getElementById('downloadLink');
+const resetBtn = document.getElementById('resetBtn');
+const statusBar = document.getElementById('statusBar');
+const previewRow = document.getElementById('previewRow');
+const playBtn = document.getElementById('playBtn');
+const stopBtn = document.getElementById('stopBtn');
 const previewProgress = document.getElementById('previewProgress');
-const previewTime     = document.getElementById('previewTime');
+const previewTime = document.getElementById('previewTime');
 
 /* ============================================================
-   GROOVE PROFILES
+   MODE + GROOVE COPY
    ============================================================ */
+const MODE_COPY = {
+  stitch: "Plays clips sequentially with modulation bridges between distant keys and pitch smoothing at each boundary.",
+  merge: "Layers all clips from bar 1, looping shorter clips. Transposes each clip to a shared key."
+};
+
 const GROOVE_COPY = {
-  lofi:      "Laid-back boom-bap pocket. Kick on 1, snare dragged behind the grid, loose 8th-note hats with phase displacement.",
-  synthwave: "Driving four-on-the-floor. Kick and hats locked to the quarter-note grid, minimal humanisation.",
-  ambient:   "Sparse pulse. Soft kick and distant hat every other bar, generous micro-timing drift."
+  lofi: "Laid-back boom-bap. Dragged snare, swung hats, soft kick.",
+  boombap: "Classic 90s hip-hop. Punchy backbeat, swung 8th hats.",
+  trap: "Rolling 16th hats with triplet fills, sparse 808 kick.",
+  synthwave: "Four-on-the-floor, grid-locked, minimal swing.",
+  poprock: "Straight backbeat. Kick on 1+3, snare on 2+4, 8th hats.",
+  latin: "Syncopated clave feel. Off-beat kick, rim-shot snare.",
+  rnb: "Laid-back neo-soul. Heavy swing, ghost-note hats.",
+  cinematic: "Sparse, spacious. Downbeat kicks only.",
+  ambient: "Ultra-sparse pulse. Every other bar, heavy drift."
 };
 
 const GROOVE_PARAMS = {
-  lofi:      { swing: 0.022, drag: 0.015, humanise: true,  swingBeats: [0.5, 1.5, 2.5, 3.5] },
-  synthwave: { swing: 0.0,   drag: 0.0,   humanise: false, swingBeats: [] },
-  ambient:   { swing: 0.012, drag: 0.020, humanise: true,  swingBeats: [0.5, 2.5] }
+  lofi:      { swing: 0.022, drag: 0.015, humanise: true,  fill: true },
+  boombap:   { swing: 0.014, drag: 0.010, humanise: true,  fill: true },
+  trap:      { swing: 0.006, drag: 0.004, humanise: true,  fill: true },
+  synthwave: { swing: 0.0,   drag: 0.0,   humanise: false, fill: false },
+  poprock:   { swing: 0.0,   drag: 0.0,   humanise: true,  fill: true },
+  latin:     { swing: 0.010, drag: 0.006, humanise: true,  fill: true },
+  rnb:       { swing: 0.026, drag: 0.020, humanise: true,  fill: true },
+  cinematic: { swing: 0.008, drag: 0.010, humanise: true,  fill: false },
+  ambient:   { swing: 0.012, drag: 0.020, humanise: true,  fill: false }
 };
 
 /* ============================================================
-   MUSIC THEORY CONSTANTS
+   MUSIC THEORY
    ============================================================ */
 const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-const NOTE_ALIASES = {"Db":"C#","Eb":"D#","Gb":"F#","Ab":"G#","Bb":"A#","Cb":"B","Fb":"E","E#":"F","B#":"C"};
-
-// Krumhansl-Kessler key profiles (12 entries, C-indexed)
-// These represent the perceptual stability/hierarchy of each pitch class
-// relative to a tonic. Index 0 = tonic, 7 = dominant, etc.
 const KS_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+const SCALE_STEPS = { major: [0,2,4,5,7,9,11], minor: [0,2,3,5,7,8,10] };
+const CHORD_INTERVALS = { maj: [0,4,7], min: [0,3,7], dom7: [0,4,7,10], min7: [0,3,7,10], maj7: [0,4,7,11] };
 
-// Circle of Fifths: position = (pc * 7) % 12 for major;
-// for minor, relative major is pc+3, so position = ((pc+3)*7) % 12
-const SCALE_STEPS = {
-  major: [0, 2, 4, 5, 7, 9, 11],
-  minor: [0, 2, 3, 5, 7, 8, 10]
+// Diatonic chord qualities by scale degree (I ii iii IV V vi vii°)
+const DIATONIC_CHORDS = {
+  major: [
+    { intervals: [0,4,7],    root: 0, name: 'I'  },
+    { intervals: [0,3,7],    root: 2, name: 'ii' },
+    { intervals: [0,3,7],    root: 4, name: 'iii'},
+    { intervals: [0,4,7],    root: 5, name: 'IV' },
+    { intervals: [0,4,7,10], root: 7, name: 'V'  },
+    { intervals: [0,3,7],    root: 9, name: 'vi' },
+    { intervals: [0,3,6],    root: 11,name: 'vii°'}
+  ],
+  minor: [
+    { intervals: [0,3,7],    root: 0, name: 'i'  },
+    { intervals: [0,3,7],    root: 2, name: 'ii°'},
+    { intervals: [0,4,7],    root: 3, name: 'III'},
+    { intervals: [0,3,7],    root: 5, name: 'iv' },
+    { intervals: [0,3,7],    root: 7, name: 'v'  },
+    { intervals: [0,4,7],    root: 8, name: 'VI' },
+    { intervals: [0,4,7],    root: 10,name: 'VII'}
+  ]
 };
 
-// Chord intervals for modulation bridge generation
-const CHORD_INTERVALS = {
-  maj:   [0, 4, 7],
-  min:   [0, 3, 7],
-  dom7:  [0, 4, 7, 10],
-  min7:  [0, 3, 7, 10],
-  maj7:  [0, 4, 7, 11]
+// Common chord progressions (scale degree indices)
+const PROGRESSIONS = {
+  major: [ [0,5,3,4], [0,3,4,0], [0,5,1,4], [5,3,0,4], [0,1,4,0] ],
+  minor: [ [0,5,3,4], [0,3,4,0], [0,5,1,4], [3,4,0,0], [0,4,3,0] ]
 };
 
-const GM_KICK   = 36;
-const GM_SNARE  = 38;
-const GM_HIHAT  = 42;
-const GM_OPENHAT = 46;
+const GM_KICK = 36, GM_SNARE = 38, GM_HIHAT = 42, GM_OPENHAT = 46, GM_CLAP = 39, GM_RIM = 37;
+const MAX_NOTE_BEATS = 8;
+const SYNC_CC_NUMBER = 102;
 
 /* ============================================================
-   UTILITY FUNCTIONS
+   UTILITIES
    ============================================================ */
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
+function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
-
-// Box-Muller Gaussian random — mean=0, stdev=1 by default
 function gaussianRandom(mean = 0, stdev = 1) {
   const u1 = Math.random() || 1e-10;
   const u2 = Math.random();
-  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  return mean + z * stdev;
+  return mean + Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * stdev;
 }
-
 function formatTime(seconds) {
   const s = Math.max(0, Math.round(seconds || 0));
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
-
 function setStatus(msg, tone) {
   statusBar.textContent = msg;
   statusBar.classList.remove('error', 'success');
@@ -664,475 +305,878 @@ function setStatus(msg, tone) {
 }
 
 /* ============================================================
-   1. KRUMHANSL-SCHMUCKLER KEY DETECTION
-   Builds a duration-weighted pitch-class vector from all notes
-   in a MIDI clip, then correlates against 24 key profiles
-   (12 major + 12 minor) using Pearson correlation.
-   Returns: { root (0-11), mode ('major'|'minor'), confidence }
+   CLIP LENGTH (capped)
    ============================================================ */
-function buildPitchClassVector(midi) {
-  const pc = new Array(12).fill(0);
-  midi.tracks.forEach(track => {
-    track.notes.forEach(note => {
-      // Weight by duration — longer notes have more perceptual weight
-      pc[note.midi % 12] += note.duration || 0.25;
-    });
-  });
-  // Normalize to unit vector for correlation
-  const mag = Math.sqrt(pc.reduce((s, v) => s + v * v, 0)) || 1;
-  return pc.map(v => v / mag);
-}
-
-function pearsonCorrelation(a, b) {
-  const n = a.length;
-  const meanA = a.reduce((s, v) => s + v, 0) / n;
-  const meanB = b.reduce((s, v) => s + v, 0) / n;
-  let num = 0, denA = 0, denB = 0;
-  for (let i = 0; i < n; i++) {
-    const dA = a[i] - meanA;
-    const dB = b[i] - meanB;
-    num += dA * dB;
-    denA += dA * dA;
-    denB += dB * dB;
-  }
-  const den = Math.sqrt(denA * denB);
-  return den === 0 ? 0 : num / den;
-}
-
-function detectKey(midi) {
-  const inputVector = buildPitchClassVector(midi);
-  let best = { root: 0, mode: 'major', confidence: 0, r: -2 };
-
-  for (let root = 0; root < 12; root++) {
-    // Rotate the key profile so index 0 aligns with this root
-    for (const [mode, profile] of [['major', KS_MAJOR], ['minor', KS_MINOR]]) {
-      // Rotate profile so tonic is at position `root`
-      const rotated = new Array(12);
-      for (let i = 0; i < 12; i++) {
-        rotated[(i + root) % 12] = profile[i];
-      }
-      const r = pearsonCorrelation(inputVector, rotated);
-      if (r > best.r) {
-        best = { root, mode, confidence: r, r };
-      }
-    }
-  }
-
-  return {
-    root: best.root,
-    mode: best.mode,
-    name: NOTE_NAMES[best.root] + ' ' + best.mode,
-    confidence: best.r
-  };
+function computeClipContentBars(clip) {
+  const beatLen = 60 / clip.originalBpm;
+  const barLen = beatLen * 4;
+  const capSec = MAX_NOTE_BEATS * beatLen;
+  let maxEnd = 0;
+  clip.midi.tracks.forEach(t => t.notes.forEach(n => {
+    const end = n.time + Math.min(n.duration, capSec);
+    if (end > maxEnd) maxEnd = end;
+  }));
+  if (maxEnd <= 0) maxEnd = (clip.duration && isFinite(clip.duration)) ? clip.duration : barLen;
+  return Math.max(1, Math.ceil((maxEnd - 1e-6) / barLen));
 }
 
 /* ============================================================
-   2. CIRCLE OF FIFTHS DISTANCE
-   Returns the step difference on the circle of fifths.
-   D <= 1 → direct transposition is safe
-   D >= 2 → procedural modulation bridge needed
+   KEY DETECTION
    ============================================================ */
-function cofPosition(root, mode) {
-  // Major: position = (root * 7) % 12
-  // Minor: relative major is root+3, position = ((root+3) * 7) % 12
-  if (mode === 'minor') {
-    return ((root + 3) * 7) % 12;
+function buildPitchClassVector(midi) {
+  const pc = new Array(12).fill(0);
+  midi.tracks.forEach(t => t.notes.forEach(n => { pc[n.midi % 12] += n.duration || 0.25; }));
+  const mag = Math.sqrt(pc.reduce((s, v) => s + v * v, 0)) || 1;
+  return pc.map(v => v / mag);
+}
+function pearsonCorrelation(a, b) {
+  const n = a.length, mA = a.reduce((s,v)=>s+v,0)/n, mB = b.reduce((s,v)=>s+v,0)/n;
+  let num=0, dA=0, dB=0;
+  for (let i=0; i<n; i++) { const x=a[i]-mA, y=b[i]-mB; num+=x*y; dA+=x*x; dB+=y*y; }
+  const d = Math.sqrt(dA*dB);
+  return d === 0 ? 0 : num/d;
+}
+function detectKey(midi) {
+  const vec = buildPitchClassVector(midi);
+  let best = { root: 0, mode: 'major', confidence: -2 };
+  for (let root = 0; root < 12; root++) {
+    for (const [m, profile] of [['major', KS_MAJOR], ['minor', KS_MINOR]]) {
+      const rotated = new Array(12);
+      for (let i = 0; i < 12; i++) rotated[(i + root) % 12] = profile[i];
+      const r = pearsonCorrelation(vec, rotated);
+      if (r > best.confidence) best = { root, mode: m, confidence: r };
+    }
   }
-  return (root * 7) % 12;
+  return { root: best.root, mode: best.mode, name: NOTE_NAMES[best.root] + ' ' + best.mode, confidence: best.confidence };
 }
 
+/* ============================================================
+   CIRCLE OF FIFTHS
+   ============================================================ */
+function cofPosition(root, keyMode) {
+  return keyMode === 'minor' ? ((root + 3) * 7) % 12 : (root * 7) % 12;
+}
 function harmonicDistance(keyA, keyB) {
-  const posA = cofPosition(keyA.root, keyA.mode);
-  const posB = cofPosition(keyB.root, keyB.mode);
-  const diff = Math.abs(posA - posB);
+  const diff = Math.abs(cofPosition(keyA.root, keyA.mode) - cofPosition(keyB.root, keyB.mode));
   return Math.min(diff, 12 - diff);
 }
 
 /* ============================================================
-   3. MODULATION BRIDGE GENERATION
-   When CoF distance >= 2, generate a 1-bar ii-V-I cadence
-   in the target key using lower-octave triads.
-   Returns array of MIDI notes with timing.
+   MODULATION BRIDGE (ii-V-I)
    ============================================================ */
 function generateModulationBridge(targetKey, bpm, startBeat) {
   const beatLen = 60 / bpm;
   const scale = SCALE_STEPS[targetKey.mode] || SCALE_STEPS.major;
   const rootPc = targetKey.root;
-
-  // Find scale degrees: ii, V, I
-  // ii = scale[1], V = scale[4], I = scale[0]
   const iiPc = (rootPc + scale[1]) % 12;
   const vPc  = (rootPc + scale[4]) % 12;
   const iPc  = rootPc;
-
-  // Octave: use octave 3 for lower register triads (MIDI 36-59 range)
-  const oct = 3;
-  const rootMidi = (oct + 1) * 12; // C3 = 48
-
-  // ii chord: minor triad
-  // V chord: dominant 7th (for major) or minor 7th (for minor key)
-  // I chord: major (if major key) or minor (if minor key)
-  const iiChord  = CHORD_INTERVALS.min.map(iv => rootMidi + iiPc - 12 + iv);
-  const vChord  = (targetKey.mode === 'minor' ? CHORD_INTERVALS.min7 : CHORD_INTERVALS.dom7)
-                  .map(iv => rootMidi + vPc - 12 + iv);
-  const iChord  = (targetKey.mode === 'minor' ? CHORD_INTERVALS.min : CHORD_INTERVALS.maj)
-                  .map(iv => rootMidi + iPc - 12 + iv);
-
-  // Each chord gets 1/3 of the bar (in a 4/4 bar = ~1.33 beats each)
-  const beatsPerChord = (4 * beatLen) / 3; // seconds
-  const bridgeNotes = [];
-
+  const rootMidi = 48;
+  const iiChord = CHORD_INTERVALS.min.map(iv => rootMidi + iiPc - 12 + iv);
+  const vChord  = (targetKey.mode === 'minor' ? CHORD_INTERVALS.min7 : CHORD_INTERVALS.dom7).map(iv => rootMidi + vPc - 12 + iv);
+  const iChord  = (targetKey.mode === 'minor' ? CHORD_INTERVALS.min : CHORD_INTERVALS.maj).map(iv => rootMidi + iPc - 12 + iv);
+  const beatsPerChord = (4 * beatLen) / 3;
+  const notes = [];
   [iiChord, vChord, iChord].forEach((chord, idx) => {
     chord.forEach(midiNote => {
-      bridgeNotes.push({
-        midi: midiNote,
-        time: startBeat * beatLen + idx * beatsPerChord,
-        duration: beatsPerChord * 0.9,
-        velocity: 0.55 + idx * 0.08 // crescendo into resolution
-      });
+      notes.push({ midi: midiNote, time: startBeat * beatLen + idx * beatsPerChord, duration: beatsPerChord * 0.9, velocity: 0.55 + idx * 0.08 });
     });
   });
-
-  return { notes: bridgeNotes, durationBeats: 4 }; // 1 bar = 4 beats
+  return { notes, durationBeats: 4 };
 }
 
 /* ============================================================
-   4. HURON PITCH PROXIMITY SMOOTHING
-   If the interval between the last note of Clip A and the first
-   melodic note of Clip B exceeds a perfect fourth (5 semitones),
-   transpose Clip B by ±12 until the interval is minimized.
-   Then apply step reversal for any remaining leap.
+   PITCH SMOOTHING (Huron)
    ============================================================ */
-function smoothPitchBoundary(clipA, clipB) {
-  // Get last melodic note from clip A (highest track with notes)
-  let lastNoteA = null;
-  for (const track of clipA.midi.tracks) {
-    if (track.notes.length === 0) continue;
-    const lastInTrack = track.notes.reduce((max, n) =>
-      n.time + n.duration > (max ? max.time + max.duration : -1) ? n : max, null);
-    if (!lastNoteA || (lastInTrack.time + lastInTrack.duration) > (lastNoteA.time + lastNoteA.duration)) {
-      lastNoteA = lastInTrack;
-    }
-  }
-  if (!lastNoteA) return 0;
-
-  // Get first melodic note from clip B
-  let firstNoteB = null;
-  for (const track of clipB.midi.tracks) {
-    if (track.notes.length === 0) continue;
-    const firstInTrack = track.notes.reduce((min, n) =>
-      n.time < (min ? min.time : Infinity) ? n : min, null);
-    if (!firstNoteB || firstInTrack.time < firstNoteB.time) {
-      firstNoteB = firstInTrack;
-    }
-  }
-  if (!firstNoteB) return 0;
-
-  const interval = firstNoteB.midi - lastNoteA.midi;
-  if (Math.abs(interval) <= 5) return 0; // Within perfect fourth — safe
-
-  // Transpose clip B by octaves to minimize the interval
-  let bestShift = 0;
-  let bestAbs = Math.abs(interval);
+function findLastNote(midi) {
+  let last = null;
+  midi.tracks.forEach(t => t.notes.forEach(n => {
+    if (!last || (n.time + n.duration) > (last.time + last.duration)) last = n;
+  }));
+  return last;
+}
+function findFirstNote(midi) {
+  let first = null;
+  midi.tracks.forEach(t => t.notes.forEach(n => {
+    if (!first || n.time < first.time) first = n;
+  }));
+  return first;
+}
+function computeSmoothingShift(clipA, clipB) {
+  const lastA = findLastNote(clipA.midi);
+  const firstB = findFirstNote(clipB.midi);
+  if (!lastA || !firstB) return 0;
+  const interval = firstB.midi - lastA.midi;
+  if (Math.abs(interval) <= 5) return 0;
+  let bestShift = 0, bestAbs = Math.abs(interval);
   for (let oct = -3; oct <= 3; oct++) {
     const candidate = interval + oct * 12;
-    if (Math.abs(candidate) < bestAbs) {
-      bestAbs = Math.abs(candidate);
-      bestShift = oct * 12;
-    }
+    if (Math.abs(candidate) < bestAbs) { bestAbs = Math.abs(candidate); bestShift = oct * 12; }
   }
-
-  if (bestShift !== 0) {
-    // Apply transposition to all notes in clip B
-    clipB.midi.tracks.forEach(track => {
-      track.notes.forEach(note => { note.midi += bestShift; });
-    });
-  }
-
   return bestShift;
 }
 
 /* ============================================================
-   5. KTH/SUNDBERG HUMANISATION
-   - Phrase-final elongation (2-5% ritardando on terminal bar)
-   - Duration-dependent velocity accenting (+3-7 for longer notes)
-   - Gaussian velocity: strong beats = 105, weak = 85
-   - Gaussian micro-timing: -8ms to +14ms displacement
+   MELODY ENRICHMENT
+   If a clip has fewer than 5 unique pitches, generate additional
+   melodic content using scale tones, passing tones, and arpeggiated
+   chord tones from the detected key. Creates voice-leading-aware
+   melodic lines that fill the gaps.
    ============================================================ */
-function applyHumanisation(notes, bpm, grooveParams, isTerminalClip) {
+function getScaleNotes(rootPc, keyMode) {
+  const steps = SCALE_STEPS[keyMode] || SCALE_STEPS.major;
+  const notes = [];
+  for (let oct = 2; oct <= 6; oct++) {
+    steps.forEach(step => notes.push(rootPc + step + oct * 12));
+  }
+  return notes.sort((a, b) => a - b);
+}
+
+function generateEnrichedMelody(clipKey, startBeat, numBars, bpm) {
   const beatLen = 60 / bpm;
   const barLen = beatLen * 4;
-  const humanise = grooveParams.humanise;
+  const scaleNotes = getScaleNotes(clipKey.root, clipKey.mode);
+  const chords = DIATONIC_CHORDS[clipKey.mode] || DIATONIC_CHORDS.major;
+  const progressions = PROGRESSIONS[clipKey.mode] || PROGRESSIONS.major;
+  const progression = progressions[Math.floor(Math.random() * progressions.length)];
 
-  // Group notes by bar to identify terminal bar
-  const notesByBar = {};
-  notes.forEach(n => {
-    const bar = Math.floor(n.time / barLen);
-    if (!notesByBar[bar]) notesByBar[bar] = [];
-    notesByBar[bar].push(n);
-  });
+  // Choose a comfortable melodic register (around MIDI 60-72)
+  const centerMidi = 64;
+  const scaleNear = scaleNotes.filter(n => n >= 55 && n <= 79);
+  if (scaleNear.length === 0) return [];
 
-  const maxBar = Math.max(0, ...Object.keys(notesByBar).map(Number));
+  const notes = [];
+  let lastPitch = scaleNear[Math.floor(scaleNear.length / 2)];
+  let prevDirection = 1;
 
-  notes.forEach(note => {
-    const beatInBar = (note.time % barLen) / beatLen;
-    const isStrongBeat = Math.abs(beatInBar % 2) < 0.15; // beats 1 and 3
-    const barIdx = Math.floor(note.time / barLen);
-    const isTerminalBar = isTerminalClip && barIdx === maxBar;
+  for (let bar = 0; bar < numBars; bar++) {
+    const chordDegree = progression[bar % progression.length];
+    const chord = chords[chordDegree];
+    const chordPc = (clipKey.root + chord.root) % 12;
+    const chordTones = scaleNotes.filter(n =>
+      chord.intervals.some(iv => (n % 12) === (chordPc + iv) % 12) && n >= 55 && n <= 79
+    );
 
-    // --- Gaussian micro-timing ---
-    if (humanise) {
-      // Center at +3ms, stdev ~6ms, clamped to [-8ms, +14ms]
-      let delta = gaussianRandom(0.003, 0.006);
-      delta = clamp(delta, -0.008, 0.014);
-      note.time = Math.max(0, note.time + delta);
+    // Generate 2-4 notes per bar with smooth voice leading
+    const notesPerBar = bar % 2 === 0 ? 4 : 3;
+    const subdivisions = notesPerBar;
 
-      // Groove swing: delay even-numbered 8th/16th notes
-      if (grooveParams.swing > 0) {
-        const eighthIdx = Math.round((note.time / beatLen) * 2);
-        const isOffBeat = Math.abs(eighthIdx / 2 - Math.round(eighthIdx / 2)) > 0.01
-                        && (eighthIdx % 2 === 1);
-        if (isOffBeat) {
-          note.time += grooveParams.swing;
-        }
+    for (let s = 0; s < subdivisions; s++) {
+      const time = startBeat * beatLen + bar * barLen + (s / subdivisions) * barLen;
+      const duration = (barLen / subdivisions) * 0.8;
+
+      // Pick a chord tone on strong beats, scale tone on weak beats
+      let candidate;
+      if (s === 0 || (s === Math.floor(subdivisions / 2) && Math.random() > 0.3)) {
+        // Strong beat: choose nearest chord tone
+        candidate = chordTones.reduce((best, n) =>
+          Math.abs(n - lastPitch) < Math.abs(best - lastPitch) ? n : best, chordTones[0] || lastPitch);
+      } else {
+        // Weak beat: nearest scale tone, stepwise preferred
+        const stepwise = scaleNear.filter(n => Math.abs(n - lastPitch) <= 4);
+        candidate = stepwise.length > 0
+          ? stepwise[Math.floor(Math.random() * stepwise.length)]
+          : scaleNear[Math.floor(Math.random() * scaleNear.length)];
       }
 
-      // Drag (behind-the-beat for snare/percussion)
-      if (grooveParams.drag > 0 && note.midi >= GM_SNARE) {
-        note.time += gaussianRandom(grooveParams.drag, grooveParams.drag * 0.5);
+      // Voice leading: limit to max 5 semitone leap, prefer stepwise
+      let interval = candidate - lastPitch;
+      if (Math.abs(interval) > 7) {
+        // Octave-shift the candidate closer
+        while (candidate - lastPitch > 7) candidate -= 12;
+        while (lastPitch - candidate > 7) candidate += 12;
       }
-    }
 
-    // --- Duration-dependent velocity (Accenting Rule) ---
-    // Longer notes (>= half note = 2 beats) get +3 to +7 velocity
-    if (note.duration >= beatLen * 2) {
-      const boost = clamp(gaussianRandom(5, 1.5), 3, 7);
-      note.velocity = clamp(note.velocity + boost / 127, 0.05, 1);
-    }
+      // Occasional direction change for musical interest
+      if (Math.random() < 0.15) prevDirection *= -1;
 
-    // --- Gaussian velocity profile ---
-    if (humanise) {
-      // Strong beats center at 105/127 ≈ 0.827, weak at 85/127 ≈ 0.669
-      const center = isStrongBeat ? 0.827 : 0.669;
-      const stdev = 0.04;
-      note.velocity = clamp(gaussianRandom(center, stdev), 0.1, 1);
-    }
+      lastPitch = candidate;
+      // Velocity with phrase shaping: stronger at phrase starts, lighter at phrase ends
+      const phrasePos = (bar % 4) / 4;
+      const beatInBar = s / subdivisions;
+      const isStrong = s === 0;
+      let vel = isStrong ? 0.7 : 0.5;
+      // Phrase arc: crescendo to middle, decrescendo at end
+      vel *= 0.85 + 0.15 * Math.sin(phrasePos * Math.PI);
+      // Add some humanization
+      vel = clamp(vel + gaussianRandom(0, 0.05), 0.1, 1);
 
-    // --- Phrase-final elongation ---
-    if (isTerminalBar) {
-      const elongation = 1 + (0.02 + Math.random() * 0.03); // 2-5%
-      note.duration *= elongation;
+      notes.push({ midi: candidate, time, duration, velocity: vel });
     }
-  });
+  }
 
   return notes;
 }
 
 /* ============================================================
-   6. GROOVE DRUM PATTERN GENERATION
-   Enhanced with Gaussian humanisation per the KTH rules.
+   BASS LINE GENERATION
+   Root-fifth walking bass pattern from detected key's diatonic
+   chord progression. Always present to give a solid low end.
    ============================================================ */
-function addDrumHit(track, note, time, velBase, grooveParams) {
-  let velocity = velBase;
-  let placedTime = time;
+function generateBassLine(clipKey, startBeat, numBars, bpm) {
+  const beatLen = 60 / bpm;
+  const barLen = beatLen * 4;
+  const chords = DIATONIC_CHORDS[clipKey.mode] || DIATONIC_CHORDS.major;
+  const progressions = PROGRESSIONS[clipKey.mode] || PROGRESSIONS.major;
+  const progression = progressions[Math.floor(Math.random() * progressions.length)];
 
-  if (grooveParams.humanise) {
-    // Gaussian velocity offset
+  // Bass register: MIDI 36-52
+  const rootMidi = clipKey.root + 36; // Root in octave 2/3
+  const notes = [];
+
+  for (let bar = 0; bar < numBars; bar++) {
+    const chordDegree = progression[bar % progression.length];
+    const chord = chords[chordDegree];
+    const chordRootPc = (clipKey.root + chord.root) % 12;
+    const bassRoot = chordRootPc + 36; // Root note in lower register
+    const fifth = bassRoot + 7;
+    const octave = bassRoot + 12;
+
+    const barStart = startBeat * beatLen + bar * barLen;
+
+    // Pattern: root - fifth - root - approach (to next chord root)
+    const nextDegree = progression[(bar + 1) % progression.length];
+    const nextChord = chords[nextDegree];
+    const nextRootPc = (clipKey.root + nextChord.root) % 12;
+    const nextRoot = nextRootPc + 36;
+    // Chromatic approach to next root (from a semitone below)
+    const approachNote = nextRoot - 1;
+
+    const pattern = [bassRoot, fifth, bassRoot, octave];
+    const durations = [beatLen * 0.9, beatLen * 0.9, beatLen * 0.9, beatLen * 0.45];
+    const times = [0, 1, 2, 3];
+
+    pattern.forEach((pitch, i) => {
+      const time = barStart + times[i] * beatLen;
+      let dur = durations[i];
+      // Last beat: chromatic approach to next chord root
+      if (i === 3 && bar < numBars - 1) {
+        notes.push({
+          midi: clamp(approachNote, 24, 60),
+          time: time + beatLen * 0.5,
+          duration: beatLen * 0.4,
+          velocity: 0.55 + gaussianRandom(0, 0.04)
+        });
+      }
+      notes.push({
+        midi: clamp(pitch, 24, 60),
+        time,
+        duration: dur,
+        velocity: (i === 0 ? 0.75 : 0.55) + gaussianRandom(0, 0.04)
+      });
+    });
+  }
+
+  return notes;
+}
+
+/* ============================================================
+   CHORD PAD GENERATION
+   Sustained diatonic chords filling out the harmony, played
+   softly with slow attack. One chord per bar.
+   ============================================================ */
+function generateChordPads(clipKey, startBeat, numBars, bpm) {
+  const beatLen = 60 / bpm;
+  const barLen = beatLen * 4;
+  const chords = DIATONIC_CHORDS[clipKey.mode] || DIATONIC_CHORDS.major;
+  const progressions = PROGRESSIONS[clipKey.mode] || PROGRESSIONS.major;
+  const progression = progressions[Math.floor(Math.random() * progressions.length)];
+
+  // Chord pad register: MIDI 48-67
+  const baseOctave = 48;
+  const notes = [];
+
+  for (let bar = 0; bar < numBars; bar++) {
+    const chordDegree = progression[bar % progression.length];
+    const chord = chords[chordDegree];
+    const chordRootPc = (clipKey.root + chord.root) % 12;
+    const barStart = startBeat * beatLen + bar * barLen;
+
+    chord.intervals.forEach(iv => {
+      const pitch = chordRootPc + baseOctave + iv;
+      notes.push({
+        midi: clamp(pitch, 36, 79),
+        time: barStart,
+        duration: barLen * 0.95,
+        velocity: 0.4 + gaussianRandom(0, 0.03)
+      });
+    });
+  }
+
+  return notes;
+}
+
+/* ============================================================
+   HUMANISATION (KTH/Sundberg)
+   ============================================================ */
+function applyHumanisation(notes, bpm, gParams, isTerminalTrack) {
+  const beatLen = 60 / bpm;
+  const barLen = beatLen * 4;
+  if (!notes.length) return;
+
+  let maxBar = 0;
+  notes.forEach(n => { const b = Math.floor(n.time / barLen); if (b > maxBar) maxBar = b; });
+
+  notes.forEach(note => {
+    const beatInBar = (note.time % barLen) / beatLen;
+    const isStrongBeat = Math.abs(beatInBar % 2) < 0.15;
+    const barIdx = Math.floor(note.time / barLen);
+    const isTerminalBar = isTerminalTrack && barIdx === maxBar;
+
+    if (gParams.humanise) {
+      let delta = gaussianRandom(0.003, 0.006);
+      delta = clamp(delta, -0.008, 0.014);
+      note.time = Math.max(0, note.time + delta);
+      if (gParams.swing > 0) {
+        const eighthIdx = Math.round((note.time / beatLen) * 2);
+        if (eighthIdx % 2 === 1) note.time += gParams.swing;
+      }
+    }
+
+    if (note.duration >= beatLen * 2) {
+      const boost = clamp(gaussianRandom(5, 1.5), 3, 7);
+      note.velocity = clamp(note.velocity + boost / 127, 0.05, 1);
+    }
+
+    if (gParams.humanise) {
+      const center = isStrongBeat ? 0.827 : 0.669;
+      note.velocity = clamp(gaussianRandom(center, 0.04), 0.1, 1);
+    }
+
+    if (isTerminalBar) {
+      note.duration *= 1 + (0.02 + Math.random() * 0.03);
+    }
+  });
+}
+
+/* ============================================================
+   DRUM GENERATION — varied patterns with fills
+   ============================================================ */
+function addDrumHit(track, note, time, velBase, gParams, bpm) {
+  let velocity = velBase, placedTime = time;
+  if (gParams.humanise) {
     velocity = clamp(gaussianRandom(velBase, 0.04), 0.1, 1);
-    // Gaussian micro-timing
     let delta = gaussianRandom(0.003, 0.005);
     delta = clamp(delta, -0.008, 0.014);
     placedTime = Math.max(0, time + delta);
-    // Swing on off-beats
-    const beatLen = 60 / Number(tempoSlider.value);
+    const beatLen = 60 / bpm;
     const eighthIdx = Math.round((time / beatLen) * 2);
-    if (eighthIdx % 2 === 1) {
-      placedTime += grooveParams.swing;
-    }
-    // Drag for snare
-    if (note === GM_SNARE && grooveParams.drag > 0) {
-      placedTime += gaussianRandom(grooveParams.drag, grooveParams.drag * 0.4);
+    if (eighthIdx % 2 === 1) placedTime += gParams.swing;
+    if (note === GM_SNARE && gParams.drag > 0) {
+      placedTime += gaussianRandom(gParams.drag, gParams.drag * 0.4);
     }
   }
-
-  track.addNote({
-    midi: note,
-    time: Math.max(0, placedTime),
-    duration: 0.12,
-    velocity: velocity
-  });
+  track.addNote({ midi: note, time: Math.max(0, placedTime), duration: 0.12, velocity });
 }
 
 function applyGroovePattern(drumTrack, groove, totalDuration, bpm) {
   const g = GROOVE_PARAMS[groove] || GROOVE_PARAMS.lofi;
   const beatLen = 60 / bpm;
   const barLen = beatLen * 4;
-  const totalBars = Math.max(1, Math.ceil(totalDuration / barLen));
+  const totalBars = Math.max(1, Math.round(totalDuration / barLen));
 
   for (let bar = 0; bar < totalBars; bar++) {
-    const barStart = bar * barLen;
+    const s = bar * barLen;
+    const isFillBar = g.fill && (bar % 4 === 3);
+
+    if (isFillBar) {
+      // Drum fill on 4th bar of each 4-bar phrase
+      const fillType = bar % 8 === 3 ? 1 : 0; // alternating fill types
+      if (fillType === 0) {
+        // Snare roll fill
+        addDrumHit(drumTrack, GM_KICK, s, 0.7, g, bpm);
+        for (let b = 0; b < 4; b++) {
+          addDrumHit(drumTrack, GM_KICK, s + b * beatLen, 0.6, g, bpm);
+        }
+        for (let e = 0; e < 8; e++) {
+          addDrumHit(drumTrack, GM_SNARE, s + (2 + e * 0.25) * beatLen, 0.5 + e * 0.05, g, bpm);
+        }
+        for (let e = 0; e < 16; e++) {
+          addDrumHit(drumTrack, GM_HIHAT, s + e * 0.25 * beatLen, 0.3, g, bpm);
+        }
+      } else {
+        // Tom/krush fill with kick
+        addDrumHit(drumTrack, GM_KICK, s, 0.8, g, bpm);
+        for (let b = 1; b < 4; b++) addDrumHit(drumTrack, GM_KICK, s + b * beatLen, 0.65, g, bpm);
+        for (let e = 0; e < 12; e++) {
+          addDrumHit(drumTrack, GM_SNARE, s + (2 + e * (2 / 12)) * beatLen, 0.4 + (e / 12) * 0.3, g, bpm);
+        }
+      }
+      continue;
+    }
 
     if (groove === 'lofi') {
-      // Boom-bap: kick on 1 and "and" of 3, snare on 3 with drag
-      addDrumHit(drumTrack, GM_KICK,   barStart + 0 * beatLen,   0.85, g);
-      addDrumHit(drumTrack, GM_SNARE,  barStart + 2 * beatLen,   0.72, g);
-      addDrumHit(drumTrack, GM_KICK,   barStart + 2.5 * beatLen, 0.60, g);
-      for (let e = 0; e < 8; e++) {
-        addDrumHit(drumTrack, GM_HIHAT, barStart + e * 0.5 * beatLen, e % 2 === 0 ? 0.40 : 0.30, g);
+      addDrumHit(drumTrack, GM_KICK,  s, 0.85, g, bpm);
+      addDrumHit(drumTrack, GM_SNARE, s + 2 * beatLen, 0.72, g, bpm);
+      addDrumHit(drumTrack, GM_KICK,  s + 2.5 * beatLen, 0.60, g, bpm);
+      for (let e = 0; e < 8; e++) addDrumHit(drumTrack, GM_HIHAT, s + e * 0.5 * beatLen, e % 2 === 0 ? 0.40 : 0.30, g, bpm);
+      if (bar % 2 === 1) addDrumHit(drumTrack, GM_SNARE, s + 3.5 * beatLen, 0.35, g, bpm); // ghost note
+    } else if (groove === 'boombap') {
+      addDrumHit(drumTrack, GM_KICK,  s, 0.88, g, bpm);
+      addDrumHit(drumTrack, GM_KICK,  s + 1.75 * beatLen, 0.55, g, bpm);
+      addDrumHit(drumTrack, GM_SNARE, s + 2 * beatLen, 0.80, g, bpm);
+      for (let e = 0; e < 8; e++) addDrumHit(drumTrack, GM_HIHAT, s + e * 0.5 * beatLen, e % 2 === 0 ? 0.45 : 0.32, g, bpm);
+      if (bar % 2 === 1) addDrumHit(drumTrack, GM_SNARE, s + 1.5 * beatLen, 0.30, g, bpm);
+    } else if (groove === 'trap') {
+      addDrumHit(drumTrack, GM_KICK,  s, 0.9, g, bpm);
+      addDrumHit(drumTrack, GM_KICK,  s + 2.75 * beatLen, 0.7, g, bpm);
+      addDrumHit(drumTrack, GM_SNARE, s + 2 * beatLen, 0.85, g, bpm);
+      for (let e = 0; e < 16; e++) {
+        const vel = e % 4 === 0 ? 0.5 : 0.28;
+        if (e === 14 && bar % 2 === 1) addDrumHit(drumTrack, GM_OPENHAT, s + e * 0.25 * beatLen, 0.4, g, bpm);
+        else addDrumHit(drumTrack, GM_HIHAT, s + e * 0.25 * beatLen, vel, g, bpm);
       }
     } else if (groove === 'synthwave') {
-      // Four-on-the-floor, grid-locked
       for (let b = 0; b < 4; b++) {
-        addDrumHit(drumTrack, GM_KICK,   barStart + b * beatLen,         0.90, g);
-        addDrumHit(drumTrack, GM_HIHAT,  barStart + b * beatLen + beatLen/2, 0.50, g);
+        addDrumHit(drumTrack, GM_KICK,  s + b * beatLen, 0.90, g, bpm);
+        addDrumHit(drumTrack, GM_HIHAT, s + b * beatLen + beatLen/2, 0.50, g, bpm);
       }
-      addDrumHit(drumTrack, GM_SNARE, barStart + 1 * beatLen, 0.80, g);
-      addDrumHit(drumTrack, GM_SNARE, barStart + 3 * beatLen, 0.80, g);
+      addDrumHit(drumTrack, GM_SNARE, s + 1 * beatLen, 0.80, g, bpm);
+      addDrumHit(drumTrack, GM_SNARE, s + 3 * beatLen, 0.80, g, bpm);
+      addDrumHit(drumTrack, GM_CLAP,  s + 1 * beatLen, 0.35, g, bpm);
+    } else if (groove === 'poprock') {
+      addDrumHit(drumTrack, GM_KICK,  s, 0.85, g, bpm);
+      addDrumHit(drumTrack, GM_KICK,  s + 2 * beatLen, 0.75, g, bpm);
+      addDrumHit(drumTrack, GM_SNARE, s + 1 * beatLen, 0.80, g, bpm);
+      addDrumHit(drumTrack, GM_SNARE, s + 3 * beatLen, 0.80, g, bpm);
+      for (let e = 0; e < 8; e++) addDrumHit(drumTrack, GM_HIHAT, s + e * 0.5 * beatLen, 0.42, g, bpm);
+      addDrumHit(drumTrack, GM_OPENHAT, s + 3.5 * beatLen, 0.35, g, bpm);
+    } else if (groove === 'latin') {
+      addDrumHit(drumTrack, GM_KICK,  s, 0.8, g, bpm);
+      addDrumHit(drumTrack, GM_KICK,  s + 1.5 * beatLen, 0.55, g, bpm);
+      addDrumHit(drumTrack, GM_RIM,  s + 2.5 * beatLen, 0.7, g, bpm);
+      addDrumHit(drumTrack, GM_SNARE, s + 3 * beatLen, 0.5, g, bpm);
+      for (let e = 0; e < 8; e++) addDrumHit(drumTrack, GM_HIHAT, s + e * 0.5 * beatLen, e % 2 === 0 ? 0.45 : 0.3, g, bpm);
+    } else if (groove === 'rnb') {
+      addDrumHit(drumTrack, GM_KICK,  s, 0.75, g, bpm);
+      addDrumHit(drumTrack, GM_KICK,  s + 2.25 * beatLen, 0.5, g, bpm);
+      addDrumHit(drumTrack, GM_SNARE, s + 2 * beatLen, 0.68, g, bpm);
+      for (let e = 0; e < 8; e++) addDrumHit(drumTrack, GM_HIHAT, s + e * 0.5 * beatLen, e % 2 === 0 ? 0.35 : 0.22, g, bpm);
+      if (bar % 2 === 1) addDrumHit(drumTrack, GM_SNARE, s + 1.5 * beatLen, 0.25, g, bpm); // ghost
+    } else if (groove === 'cinematic') {
+      addDrumHit(drumTrack, GM_KICK, s, 0.55, g, bpm);
+      if (bar % 2 === 1) addDrumHit(drumTrack, GM_HIHAT, s + 2 * beatLen, 0.2, g, bpm);
     } else if (groove === 'ambient') {
-      // Sparse, every other bar
       if (bar % 2 === 0) {
-        addDrumHit(drumTrack, GM_KICK,   barStart,               0.50, g);
-        addDrumHit(drumTrack, GM_HIHAT,  barStart + 2 * beatLen, 0.25, g);
+        addDrumHit(drumTrack, GM_KICK,  s, 0.50, g, bpm);
+        addDrumHit(drumTrack, GM_HIHAT, s + 2 * beatLen, 0.25, g, bpm);
       }
     }
   }
 }
 
 /* ============================================================
-   7. STITCH ENGINE — Main pipeline
-   For each pair of adjacent clips:
-   1. Detect key of each clip (K-S algorithm)
-   2. Calculate CoF distance
-   3. If distance >= 2, insert modulation bridge (ii-V-I)
-   4. Apply Huron pitch proximity smoothing
-   5. Apply KTH humanisation
-   6. Concatenate with proper tempo scaling
+   SYNC MARKER
+   ============================================================ */
+function addSyncMarker(track, totalSeconds) {
+  track.addCC({ number: SYNC_CC_NUMBER, value: 0, time: Math.max(0, totalSeconds - 0.001) });
+}
+
+/* ============================================================
+   NOTE COPY HELPER
+   ============================================================ */
+function copyNoteScaled(note, tempoRatio, capSec, timeOffset, hardEnd, pitchShift) {
+  const rawDur = Math.min(note.duration, capSec);
+  const sTime = note.time * tempoRatio;
+  const sDur = Math.max(0.02, rawDur * tempoRatio);
+  const placedTime = timeOffset + sTime;
+  if (hardEnd != null && placedTime >= hardEnd - 1e-6) return null;
+  let dur = sDur;
+  if (hardEnd != null) dur = Math.min(dur, hardEnd - placedTime);
+  if (dur <= 0.005) return null;
+  return { midi: clamp(note.midi + (pitchShift || 0), 0, 127), time: placedTime, duration: dur, velocity: note.velocity };
+}
+
+/* ============================================================
+   MAIN ENGINE
    ============================================================ */
 function buildStitchedMidi() {
   const bpm = Number(tempoSlider.value);
   const groove = grooveSelect.value;
   const gParams = GROOVE_PARAMS[groove] || GROOVE_PARAMS.lofi;
+  const beatLen = 60 / bpm;
+  const barLen = beatLen * 4;
 
   const output = new Midi();
   output.header.setTempo(bpm);
-  if (output.header.timeSignatures) {
-    output.header.timeSignatures.push({ ticks: 0, timeSignature: [4, 4] });
-  }
+  if (output.header.timeSignatures) output.header.timeSignatures.push({ ticks: 0, timeSignature: [4, 4] });
 
-  let timelineCursor = 0; // in seconds
   const analysisLog = [];
+  let totalBars = 0, totalSeconds = 0;
+  const allTracks = [];
 
-  // Create a drum track that spans the whole arrangement
-  const drumTrack = output.addTrack();
-  drumTrack.name = 'Drums (Groove)';
-  drumTrack.channel = 9;
+  if (mode === 'stitch') {
+    let barsAcc = 0;
+    const bridgeBars = [];
+    clips.forEach((clip, idx) => {
+      if (idx > 0) {
+        const dist = harmonicDistance(clips[idx-1].detectedKey, clip.detectedKey);
+        if (dist >= 2) { barsAcc += 1; bridgeBars.push(idx); }
+      }
+      barsAcc += clip.contentBars;
+    });
+    totalBars = barsAcc;
+    totalSeconds = totalBars * barLen;
 
-  clips.forEach((clip, idx) => {
-    // --- Step 1: Key detection ---
-    const keyResult = detectKey(clip.midi);
-    clip.detectedKey = keyResult;
-    analysisLog.push(`Clip ${idx+1} "${clip.name}": ${keyResult.name} (r=${keyResult.confidence.toFixed(2)})`);
+    let cursorBeats = 0;
 
-    // --- Tempo scaling ---
-    const tempoRatio = clip.originalBpm / bpm;
+    clips.forEach((clip, idx) => {
+      const tempoRatio = clip.originalBpm / bpm;
+      const capSec = MAX_NOTE_BEATS * (60 / clip.originalBpm);
+      const segStart = cursorBeats * beatLen;
+      const segBars = clip.contentBars;
+      const segSec = segBars * barLen;
 
-    // --- Step 2: Check harmonic distance with previous clip ---
-    if (idx > 0) {
-      const prevKey = clips[idx - 1].detectedKey;
-      const dist = harmonicDistance(prevKey, keyResult);
+      analysisLog.push(`Clip ${idx+1} "${clip.name}": ${clip.detectedKey.name} (r=${clip.detectedKey.confidence.toFixed(2)}), ${segBars} bar(s)`);
 
-      analysisLog.push(`  Distance ${prevKey.name} → ${keyResult.name}: ${dist} steps on CoF`);
+      if (idx > 0) {
+        const prevKey = clips[idx-1].detectedKey;
+        const dist = harmonicDistance(prevKey, clip.detectedKey);
+        analysisLog.push(`  Distance ${prevKey.name} -> ${clip.detectedKey.name}: ${dist} steps`);
+        if (dist >= 2) {
+          const bridge = generateModulationBridge(clip.detectedKey, bpm, cursorBeats);
+          const bridgeTrack = output.addTrack();
+          bridgeTrack.name = `Bridge (${prevKey.name} -> ${clip.detectedKey.name})`;
+          bridgeTrack.channel = 0;
+          bridge.notes.forEach(n => bridgeTrack.addNote(n));
+          cursorBeats += 4;
+          analysisLog.push(`  -> Inserted ii-V-I bridge in ${clip.detectedKey.name}`);
+        }
+        const shift = computeSmoothingShift(clips[idx-1], clip);
+        if (shift !== 0) {
+          clip.pitchShift = (clip.pitchShift || 0) + shift;
+          analysisLog.push(`  -> Pitch-smoothed clip ${idx+1} by ${shift} semitones`);
+        }
+      }
 
-      if (dist >= 2) {
-        // --- Step 3: Generate modulation bridge (ii-V-I in target key) ---
-        const bridgeStartBeat = timelineCursor / (60 / bpm);
-        const bridge = generateModulationBridge(keyResult, bpm, bridgeStartBeat);
-
-        // Add bridge notes to a dedicated track
-        const bridgeTrack = output.addTrack();
-        bridgeTrack.name = `Modulation Bridge (${prevKey.name} → ${keyResult.name})`;
-        bridgeTrack.channel = 0;
-
-        bridge.notes.forEach(n => {
-          bridgeTrack.addNote({
-            midi: n.midi,
-            time: n.time,
-            duration: n.duration,
-            velocity: n.velocity
-          });
+      // Copy original notes
+      clip.midi.tracks.forEach((srcTrack, ti) => {
+        if (srcTrack.notes.length === 0) return;
+        const destTrack = output.addTrack();
+        destTrack.name = srcTrack.name || `Track ${ti+1}`;
+        destTrack.channel = srcTrack.channel;
+        const copied = [];
+        srcTrack.notes.forEach(note => {
+          const n = copyNoteScaled(note, tempoRatio, capSec, segStart, segStart + segSec, clip.pitchShift || 0);
+          if (n) copied.push(n);
         });
+        applyHumanisation(copied, bpm, gParams, idx === clips.length - 1);
+        copied.forEach(n => destTrack.addNote(n));
+        allTracks.push(destTrack);
+      });
 
-        timelineCursor += 4 * (60 / bpm); // 1 bar = 4 beats
-        analysisLog.push(`  → Inserted ii-V-I modulation bridge in ${keyResult.name}`);
+      // Melody enrichment for sparse clips
+      const allPitches = new Set();
+      clip.midi.tracks.forEach(t => t.notes.forEach(n => allPitches.add(n.midi)));
+      if (allPitches.size < 5) {
+        const enrichTrack = output.addTrack();
+        enrichTrack.name = `Melody+ (${clip.detectedKey.name})`;
+        enrichTrack.channel = 0;
+        const enriched = generateEnrichedMelody(clip.detectedKey, cursorBeats, segBars, bpm);
+        applyHumanisation(enriched, bpm, gParams, idx === clips.length - 1);
+        enriched.forEach(n => enrichTrack.addNote(n));
+        allTracks.push(enrichTrack);
+        analysisLog.push(`  -> Enriched sparse melody (${allPitches.size} pitches -> added ${enriched.length} scale-tone notes)`);
       }
 
-      // --- Step 4: Huron pitch proximity smoothing ---
-      const shift = smoothPitchBoundary(clips[idx - 1], clip);
-      if (shift !== 0) {
-        analysisLog.push(`  → Pitch-smoothed: transposed clip ${idx+1} by ${shift} semitones`);
+      // Bass line
+      const bassTrack = output.addTrack();
+      bassTrack.name = `Bass (${clip.detectedKey.name})`;
+      bassTrack.channel = 2;
+      const bassNotes = generateBassLine(clip.detectedKey, cursorBeats, segBars, bpm);
+      applyHumanisation(bassNotes, bpm, gParams, idx === clips.length - 1);
+      bassNotes.forEach(n => bassTrack.addNote(n));
+      allTracks.push(bassTrack);
+
+      // Chord pads
+      const padTrack = output.addTrack();
+      padTrack.name = `Pads (${clip.detectedKey.name})`;
+      padTrack.channel = 3;
+      const padNotes = generateChordPads(clip.detectedKey, cursorBeats, segBars, bpm);
+      applyHumanisation(padNotes, bpm, gParams, idx === clips.length - 1);
+      padNotes.forEach(n => padTrack.addNote(n));
+      allTracks.push(padTrack);
+
+      cursorBeats += segBars * 4;
+    });
+
+  } else {
+    // MERGE MODE
+    totalBars = Math.max(...clips.map(c => c.contentBars));
+    totalSeconds = totalBars * barLen;
+    const anchorKey = clips[0].detectedKey;
+    analysisLog.push(`Anchor key: ${anchorKey.name}, arrangement: ${totalBars} bars`);
+
+    clips.forEach((clip, idx) => {
+      const tempoRatio = clip.originalBpm / bpm;
+      const capSec = MAX_NOTE_BEATS * (60 / clip.originalBpm);
+      const clipSec = clip.contentBars * barLen;
+      const loopCount = Math.max(1, Math.ceil(totalSeconds / clipSec));
+
+      let shift = 0;
+      if (idx > 0) {
+        const diff = ((anchorKey.root - clip.detectedKey.root) % 12 + 12) % 12;
+        shift = diff > 6 ? diff - 12 : diff;
+        analysisLog.push(`Clip ${idx+1} "${clip.name}": ${clip.detectedKey.name} -> shifted ${shift} semitones`);
+      } else {
+        analysisLog.push(`Clip ${idx+1} "${clip.name}": ${clip.detectedKey.name} (anchor)`);
       }
-    }
 
-    // --- Step 5: Copy notes with tempo scaling ---
-    let clipMaxTime = 0;
-    clip.midi.tracks.forEach((srcTrack, ti) => {
-      if (srcTrack.notes.length === 0) return;
-
-      const destTrack = output.addTrack();
-      destTrack.name = srcTrack.name || `Track ${ti+1}`;
-      destTrack.channel = srcTrack.channel;
-
-      srcTrack.notes.forEach(note => {
-        const scaledTime = note.time * tempoRatio;
-        const scaledDuration = Math.max(0.02, note.duration * tempoRatio);
-        const placedTime = timelineCursor + scaledTime;
-        clipMaxTime = Math.max(clipMaxTime, scaledTime + scaledDuration);
-
-        // Clone the note object so we can humanise without affecting original
-        const humanNote = {
-          midi: note.midi,
-          time: placedTime,
-          duration: scaledDuration,
-          velocity: note.velocity
-        };
-
-        destTrack.addNote(humanNote);
+      clip.midi.tracks.forEach((srcTrack, ti) => {
+        if (srcTrack.notes.length === 0) return;
+        const destTrack = output.addTrack();
+        destTrack.name = (clip.name + ' - ' + (srcTrack.name || `T${ti+1}`)).slice(0, 40);
+        destTrack.channel = srcTrack.channel;
+        const copied = [];
+        for (let L = 0; L < loopCount; L++) {
+          srcTrack.notes.forEach(note => {
+            const n = copyNoteScaled(note, tempoRatio, capSec, L * clipSec, totalSeconds, shift);
+            if (n) copied.push(n);
+          });
+        }
+        applyHumanisation(copied, bpm, gParams, idx === clips.length - 1);
+        copied.forEach(n => destTrack.addNote(n));
+        allTracks.push(destTrack);
       });
     });
 
-    // --- Apply humanisation to this clip's notes in the output ---
-    // (We humanise the output tracks, not the source clips)
-    const isTerminal = idx === clips.length - 1;
-    // Gather all tracks we just added (skip bridge + drum tracks)
-    const clipTrackStart = output.tracks.length - clip.midi.tracks.filter(t => t.notes.length > 0).length;
-    for (let ti = clipTrackStart; ti < output.tracks.length; ti++) {
-      if (output.tracks[ti].channel === 9) continue; // skip drum track
-      applyHumanisation(output.tracks[ti].notes, bpm, gParams, isTerminal);
-    }
+    // Add bass + pads for the full merge duration
+    const bassTrack = output.addTrack();
+    bassTrack.name = `Bass (${anchorKey.name})`;
+    bassTrack.channel = 2;
+    const bassNotes = generateBassLine(anchorKey, 0, totalBars, bpm);
+    applyHumanisation(bassNotes, bpm, gParams, true);
+    bassNotes.forEach(n => bassTrack.addNote(n));
+    allTracks.push(bassTrack);
 
-    // --- Advance timeline ---
-    const beatLen = 60 / bpm;
-    const clipDuration = clipMaxTime > 0 ? clipMaxTime : (clip.duration * tempoRatio);
-    const paddedDuration = Math.ceil(clipDuration / beatLen) * beatLen;
-    timelineCursor += paddedDuration;
-  });
+    const padTrack = output.addTrack();
+    padTrack.name = `Pads (${anchorKey.name})`;
+    padTrack.channel = 3;
+    const padNotes = generateChordPads(anchorKey, 0, totalBars, bpm);
+    applyHumanisation(padNotes, bpm, gParams, true);
+    padNotes.forEach(n => padTrack.addNote(n));
+    allTracks.push(padTrack);
+  }
 
-  // --- Step 6: Add groove drum pattern across the full arrangement ---
-  applyGroovePattern(drumTrack, groove, timelineCursor, bpm);
+  // Drums — exactly totalSeconds, never more
+  const drumTrack = output.addTrack();
+  drumTrack.name = 'Drums';
+  drumTrack.channel = 9;
+  applyGroovePattern(drumTrack, groove, totalSeconds, bpm);
+  allTracks.push(drumTrack);
 
-  // --- Generate output ---
+  // Sync all tracks to equal length
+  allTracks.forEach(t => addSyncMarker(t, totalSeconds));
+
   const bytes = output.toArray();
   const blob = new Blob([bytes], { type: 'audio/midi' });
   const url = URL.createObjectURL(blob);
-
-  // Log analysis
   console.log('MIDI Stitch Analysis:\n' + analysisLog.join('\n'));
 
-  return { url, midi: output, duration: timelineCursor, log: analysisLog };
+  return { url, midi: output, duration: totalSeconds, log: analysisLog, totalBars };
 }
 
 /* ============================================================
-   MIDI PARSING
+   PREVIEW — Improved synthesis with filtered oscillators + ADSR
+   ============================================================ */
+function createNoiseBuffer(ctx, dur) {
+  const size = Math.max(1, Math.floor(ctx.sampleRate * dur));
+  const buf = ctx.createBuffer(1, size, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
+function scheduleMelodicNote(ctx, master, note, voiceType, when) {
+  const startAt = when + note.time;
+  const dur = Math.max(0.05, note.duration);
+  const stopAt = startAt + dur;
+  const peak = clamp(note.velocity, 0.05, 1) * 0.22;
+  const attack = 0.015;
+  const decay = 0.08;
+  const sustain = peak * 0.6;
+  const release = Math.min(0.25, dur * 0.35);
+
+  // Two-oscillator layered sound for richer tone
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  osc1.type = voiceType;
+  osc2.type = 'sine';
+  osc2.detune.value = 7; // slight detune for warmth
+
+  const freq = midiToFreq(note.midi);
+  osc1.frequency.value = freq;
+  osc2.frequency.value = freq;
+
+  const gain = ctx.createGain();
+  const sustainTime = Math.max(startAt + attack + decay, stopAt - release);
+  gain.gain.setValueAtTime(0, startAt);
+  gain.gain.linearRampToValueAtTime(peak, startAt + attack);
+  gain.gain.linearRampToValueAtTime(sustain, startAt + attack + decay);
+  gain.gain.setValueAtTime(sustain, sustainTime);
+  gain.gain.linearRampToValueAtTime(0.0001, stopAt);
+
+  // Lowpass filter for warmth
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = Math.min(8000, freq * 6);
+  filter.Q.value = 0.7;
+
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(filter);
+  filter.connect(master);
+  osc1.start(startAt); osc1.stop(stopAt + 0.03);
+  osc2.start(startAt); osc2.stop(stopAt + 0.03);
+  activeAudioNodes.push(osc1, osc2, gain, filter);
+}
+
+function scheduleDrumHit(ctx, master, note, when) {
+  const startAt = when + note.time;
+  const peak = clamp(note.velocity, 0.05, 1);
+  if (note.midi === GM_KICK) {
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, startAt);
+    osc.frequency.exponentialRampToValueAtTime(40, startAt + 0.15);
+    gain.gain.setValueAtTime(0, startAt);
+    gain.gain.linearRampToValueAtTime(peak * 0.85, startAt + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.25);
+    osc.connect(gain); gain.connect(master);
+    osc.start(startAt); osc.stop(startAt + 0.28);
+    activeAudioNodes.push(osc, gain);
+  } else if (note.midi === GM_SNARE || note.midi === GM_RIM) {
+    const noise = ctx.createBufferSource();
+    noise.buffer = createNoiseBuffer(ctx, 0.2);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.8;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(peak * 0.5, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
+    // Add a tone component for snare body
+    const osc = ctx.createOscillator(), oscGain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(200, startAt);
+    osc.frequency.exponentialRampToValueAtTime(120, startAt + 0.1);
+    oscGain.gain.setValueAtTime(peak * 0.25, startAt);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.08);
+    noise.connect(bp); bp.connect(gain); gain.connect(master);
+    osc.connect(oscGain); oscGain.connect(master);
+    noise.start(startAt); noise.stop(startAt + 0.18);
+    osc.start(startAt); osc.stop(startAt + 0.1);
+    activeAudioNodes.push(noise, bp, gain, osc, oscGain);
+  } else if (note.midi === GM_OPENHAT) {
+    const noise = ctx.createBufferSource();
+    noise.buffer = createNoiseBuffer(ctx, 0.3);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 6000;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(peak * 0.3, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.2);
+    noise.connect(hp); hp.connect(gain); gain.connect(master);
+    noise.start(startAt); noise.stop(startAt + 0.25);
+    activeAudioNodes.push(noise, hp, gain);
+  } else if (note.midi === GM_CLAP) {
+    for (let i = 0; i < 3; i++) {
+      const noise = ctx.createBufferSource();
+      noise.buffer = createNoiseBuffer(ctx, 0.06);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 1.2;
+      const gain = ctx.createGain();
+      const t = startAt + i * 0.01;
+      gain.gain.setValueAtTime(peak * 0.4, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      noise.connect(bp); bp.connect(gain); gain.connect(master);
+      noise.start(t); noise.stop(t + 0.06);
+      activeAudioNodes.push(noise, bp, gain);
+    }
+  } else {
+    // Hi-hat
+    const noise = ctx.createBufferSource();
+    noise.buffer = createNoiseBuffer(ctx, 0.08);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 8000;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(peak * 0.3, startAt);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.05);
+    noise.connect(hp); hp.connect(gain); gain.connect(master);
+    noise.start(startAt); noise.stop(startAt + 0.06);
+    activeAudioNodes.push(noise, hp, gain);
+  }
+}
+
+function startPreview() {
+  if (!lastBuiltMidi || !lastBuiltDuration) return;
+  stopPreview();
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  // Master chain with compressor for glue
+  const master = audioCtx.createGain();
+  master.gain.value = 0.6;
+  const comp = audioCtx.createDynamicsCompressor();
+  comp.threshold.value = -18;
+  comp.knee.value = 12;
+  comp.ratio.value = 3;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.1;
+  master.connect(comp);
+  comp.connect(audioCtx.destination);
+  activeAudioNodes.push(master, comp);
+
+  const voiceTypes = ['triangle', 'sawtooth', 'square', 'sine'];
+  let trackIdx = 0;
+  lastBuiltMidi.tracks.forEach(track => {
+    if (track.notes.length === 0) return;
+    const isDrum = track.channel === 9;
+    const isBass = track.channel === 2;
+    const isPad = track.channel === 3;
+    // Assign voices: bass = sine, pads = triangle, melody = sawtooth/triangle
+    let voiceType;
+    if (isBass) voiceType = 'sine';
+    else if (isPad) voiceType = 'triangle';
+    else voiceType = voiceTypes[trackIdx % voiceTypes.length];
+    trackIdx++;
+    track.notes.forEach(note => {
+      if (isDrum) scheduleDrumHit(audioCtx, master, note, 0);
+      else scheduleMelodicNote(audioCtx, master, note, voiceType, 0);
+    });
+  });
+
+  isPreviewPlaying = true;
+  previewStartCtxTime = audioCtx.currentTime;
+  playBtn.disabled = true;
+  stopBtn.disabled = false;
+  previewEndTimeoutId = setTimeout(() => stopPreview(), (lastBuiltDuration + 0.5) * 1000);
+  updatePreviewProgress();
+}
+
+function stopPreview() {
+  if (previewEndTimeoutId) { clearTimeout(previewEndTimeoutId); previewEndTimeoutId = null; }
+  if (previewRafId) { cancelAnimationFrame(previewRafId); previewRafId = null; }
+  activeAudioNodes.forEach(node => {
+    try { if (node.stop) node.stop(); } catch(e) {}
+    try { node.disconnect(); } catch(e) {}
+  });
+  activeAudioNodes = [];
+  isPreviewPlaying = false;
+  playBtn.disabled = false;
+  stopBtn.disabled = true;
+  previewProgress.style.width = '0%';
+  previewTime.textContent = '0:00 / 0:00';
+}
+
+function updatePreviewProgress() {
+  if (!isPreviewPlaying || !audioCtx) return;
+  const elapsed = audioCtx.currentTime - previewStartCtxTime;
+  const pct = clamp((elapsed / lastBuiltDuration) * 100, 0, 100);
+  previewProgress.style.width = pct + '%';
+  previewTime.textContent = formatTime(elapsed) + ' / ' + formatTime(lastBuiltDuration);
+  if (pct < 100) previewRafId = requestAnimationFrame(updatePreviewProgress);
+}
+
+/* ============================================================
+   MIDI PARSING + DENSITY BARS
    ============================================================ */
 async function parseMidiFile(file) {
   const buffer = await file.arrayBuffer();
@@ -1150,58 +1194,43 @@ async function parseMidiFile(file) {
 
 function computeDensityBars(midi, duration, bucketCount = 20) {
   const buckets = new Array(bucketCount).fill(0);
-  midi.tracks.forEach(t => {
-    t.notes.forEach(n => {
-      const idx = duration > 0
-        ? clamp(Math.floor((n.time / duration) * bucketCount), 0, bucketCount - 1)
-        : 0;
-      buckets[idx]++;
-    });
-  });
+  midi.tracks.forEach(t => t.notes.forEach(n => {
+    const idx = duration > 0 ? clamp(Math.floor((n.time / duration) * bucketCount), 0, bucketCount - 1) : 0;
+    buckets[idx]++;
+  }));
   const max = Math.max(1, ...buckets);
   return buckets.map(b => Math.round((b / max) * 100));
 }
 
 /* ============================================================
-   RENDERING: ARRANGEMENT LIST
+   RENDER CLIP LIST
    ============================================================ */
 function renderClipList() {
   arrangementList.innerHTML = '';
-
   if (clips.length === 0) {
-    const placeholder = document.createElement('div');
-    placeholder.className = 'placeholder';
-    placeholder.textContent = 'No clips yet — imported files will line up here for reordering.';
-    arrangementList.appendChild(placeholder);
+    const p = document.createElement('div');
+    p.className = 'placeholder';
+    p.textContent = 'No clips yet — imported files will line up here for reordering.';
+    arrangementList.appendChild(p);
     return;
   }
-
   clips.forEach((clip, i) => {
     const bars = computeDensityBars(clip.midi, clip.duration || 1);
-    const keyLabel = clip.detectedKey
-      ? clip.detectedKey.name
-      : '—';
+    const keyLabel = clip.detectedKey ? clip.detectedKey.name : '—';
     const card = document.createElement('div');
     card.className = 'clip-card';
     card.dataset.clipId = clip.id;
     card.innerHTML =
       '<button type="button" class="drag-handle" aria-label="Reorder">&#10241;&#10241;</button>' +
-      '<div class="clip-info">' +
-        '<div class="clip-index">' + String(i + 1).padStart(2, '0') + '</div>' +
-        '<div class="clip-meta">' +
-          '<div class="clip-name">' + escapeHtml(clip.name) + '</div>' +
-          '<div class="clip-sub">' + clip.duration.toFixed(1) + 's &middot; ' +
-            Math.round(clip.originalBpm) + ' BPM &middot; ' +
-            clip.midi.tracks.length + (clip.midi.tracks.length === 1 ? ' tr' : ' tr') +
-            ' &middot; <span style="color:var(--amber)">' + keyLabel + '</span></div>' +
-        '</div>' +
-        '<div class="density-bars">' + bars.map(h => '<span style="height:' + Math.max(6, h) + '%"></span>').join('') + '</div>' +
-      '</div>' +
+      '<div class="clip-info"><div class="clip-index">' + String(i + 1).padStart(2, '0') + '</div>' +
+      '<div class="clip-meta"><div class="clip-name">' + escapeHtml(clip.name) + '</div>' +
+      '<div class="clip-sub">' + Math.round(clip.originalBpm) + ' BPM &middot; ' +
+      clip.contentBars + (clip.contentBars === 1 ? ' bar' : ' bars') + ' &middot; ' +
+      '<span style="color:var(--amber)">' + keyLabel + '</span></div></div>' +
+      '<div class="density-bars">' + bars.map(h => '<span style="height:' + Math.max(6, h) + '%"></span>').join('') + '</div></div>' +
       '<button type="button" class="remove-btn" aria-label="Remove">&#10005;</button>';
-
     arrangementList.appendChild(card);
     attachDragHandlers(card);
-
     card.querySelector('.remove-btn').addEventListener('click', () => {
       clips = clips.filter(c => c.id !== clip.id);
       invalidateBuiltOutput();
@@ -1218,25 +1247,22 @@ function renderClipList() {
    ============================================================ */
 function attachDragHandlers(cardEl) {
   const handle = cardEl.querySelector('.drag-handle');
-
   handle.addEventListener('pointerdown', evt => {
     evt.preventDefault();
     cardEl.setPointerCapture(evt.pointerId);
     cardEl.classList.add('dragging');
-
     const onMove = moveEvt => {
-      const clientY = moveEvt.clientY;
-      const siblings = Array.from(arrangementList.querySelectorAll('.clip-card')).filter(el => el !== cardEl);
-      for (const sib of siblings) {
-        const rect = sib.getBoundingClientRect();
-        const midpoint = rect.top + rect.height / 2;
-        const cardIsBefore = Array.prototype.indexOf.call(arrangementList.children, cardEl) <
-                             Array.prototype.indexOf.call(arrangementList.children, sib);
-        if (clientY < midpoint && !cardIsBefore) { arrangementList.insertBefore(cardEl, sib); break; }
-        if (clientY > midpoint && cardIsBefore)  { arrangementList.insertBefore(cardEl, sib.nextSibling); break; }
+      const y = moveEvt.clientY;
+      const sibs = Array.from(arrangementList.querySelectorAll('.clip-card')).filter(el => el !== cardEl);
+      for (const sib of sibs) {
+        const r = sib.getBoundingClientRect();
+        const mid = r.top + r.height / 2;
+        const cardBefore = Array.prototype.indexOf.call(arrangementList.children, cardEl) <
+                           Array.prototype.indexOf.call(arrangementList.children, sib);
+        if (y < mid && !cardBefore) { arrangementList.insertBefore(cardEl, sib); break; }
+        if (y > mid && cardBefore)  { arrangementList.insertBefore(cardEl, sib.nextSibling); break; }
       }
     };
-
     const onUp = () => {
       try { cardEl.releasePointerCapture(evt.pointerId); } catch(e) {}
       cardEl.classList.remove('dragging');
@@ -1245,7 +1271,6 @@ function attachDragHandlers(cardEl) {
       cardEl.removeEventListener('pointercancel', onUp);
       syncClipOrderFromDom();
     };
-
     cardEl.addEventListener('pointermove', onMove);
     cardEl.addEventListener('pointerup', onUp);
     cardEl.addEventListener('pointercancel', onUp);
@@ -1253,265 +1278,89 @@ function attachDragHandlers(cardEl) {
 }
 
 function syncClipOrderFromDom() {
-  const orderedIds = Array.from(arrangementList.querySelectorAll('.clip-card')).map(el => el.dataset.clipId);
-  clips.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
+  const ids = Array.from(arrangementList.querySelectorAll('.clip-card')).map(el => el.dataset.clipId);
+  clips.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   invalidateBuiltOutput();
   renderClipList();
 }
 
 /* ============================================================
-   OUTPUT INVALIDATION
+   OUTPUT MANAGEMENT
    ============================================================ */
 function invalidateBuiltOutput() {
   stopPreview();
-  lastBuiltMidi = null;
-  lastBuiltDuration = 0;
+  lastBuiltMidi = null; lastBuiltDuration = 0;
   previewRow.hidden = true;
   if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
-  downloadLink.hidden = true;
-  downloadLink.removeAttribute('href');
+  downloadLink.hidden = true; downloadLink.removeAttribute('href');
 }
-
-function updateStitchAvailability() {
-  stitchBtn.disabled = clips.length < 2;
-}
-
-function updateGrooveDesc() {
-  grooveDesc.textContent = GROOVE_COPY[grooveSelect.value] || '';
-}
-
-/* ============================================================
-   PREVIEW PLAYBACK (Web Audio API)
-   ============================================================ */
-function createNoiseBuffer(ctx, dur) {
-  const size = Math.max(1, Math.floor(ctx.sampleRate * dur));
-  const buf = ctx.createBuffer(1, size, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
-  return buf;
-}
-
-function scheduleMelodicNote(ctx, master, note, voiceType, when) {
-  const startAt = when + note.time;
-  const dur = Math.max(0.05, note.duration);
-  const stopAt = startAt + dur;
-  const peak = clamp(note.velocity, 0.05, 1) * 0.28;
-  const attack = 0.012;
-  const release = Math.min(0.18, dur * 0.4);
-
-  const osc = ctx.createOscillator();
-  osc.type = voiceType;
-  osc.frequency.value = midiToFreq(note.midi);
-
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0, startAt);
-  gain.gain.linearRampToValueAtTime(peak, startAt + attack);
-  gain.gain.setValueAtTime(peak, Math.max(startAt + attack, stopAt - release));
-  gain.gain.linearRampToValueAtTime(0.0001, stopAt);
-
-  osc.connect(gain);
-  gain.connect(master);
-  osc.start(startAt);
-  osc.stop(stopAt + 0.03);
-  activeAudioNodes.push(osc, gain);
-}
-
-function scheduleDrumHit(ctx, master, note, when) {
-  const startAt = when + note.time;
-  const peak = clamp(note.velocity, 0.05, 1);
-
-  if (note.midi === GM_KICK) {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(150, startAt);
-    osc.frequency.exponentialRampToValueAtTime(45, startAt + 0.12);
-    gain.gain.setValueAtTime(peak * 0.9, startAt);
-    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.22);
-    osc.connect(gain); gain.connect(master);
-    osc.start(startAt); osc.stop(startAt + 0.24);
-    activeAudioNodes.push(osc, gain);
-  } else if (note.midi === GM_SNARE) {
-    const noise = ctx.createBufferSource();
-    noise.buffer = createNoiseBuffer(ctx, 0.2);
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.9;
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(peak * 0.6, startAt);
-    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
-    noise.connect(bp); bp.connect(gain); gain.connect(master);
-    noise.start(startAt); noise.stop(startAt + 0.18);
-    activeAudioNodes.push(noise, bp, gain);
-  } else {
-    // Hi-hat and other percussion
-    const noise = ctx.createBufferSource();
-    noise.buffer = createNoiseBuffer(ctx, 0.08);
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 7000;
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(peak * 0.35, startAt);
-    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.06);
-    noise.connect(hp); hp.connect(gain); gain.connect(master);
-    noise.start(startAt); noise.stop(startAt + 0.08);
-    activeAudioNodes.push(noise, hp, gain);
-  }
-}
-
-function startPreview() {
-  if (!lastBuiltMidi || !lastBuiltDuration) return;
-  stopPreview();
-
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-
-  const master = audioCtx.createGain();
-  master.gain.value = 0.7;
-  master.connect(audioCtx.destination);
-  activeAudioNodes.push(master);
-
-  const voiceTypes = ['triangle', 'sine', 'sawtooth', 'square'];
-  let trackIdx = 0;
-
-  lastBuiltMidi.tracks.forEach(track => {
-    if (track.notes.length === 0) return;
-    const isDrum = track.channel === 9;
-    const voiceType = voiceTypes[trackIdx % voiceTypes.length];
-    trackIdx++;
-
-    track.notes.forEach(note => {
-      if (isDrum) {
-        scheduleDrumHit(audioCtx, master, note, 0);
-      } else {
-        scheduleMelodicNote(audioCtx, master, note, voiceType, 0);
-      }
-    });
-  });
-
-  isPreviewPlaying = true;
-  previewStartCtxTime = audioCtx.currentTime;
-  playBtn.disabled = true;
-  stopBtn.disabled = false;
-
-  const dur = lastBuiltDuration + 0.5;
-  previewEndTimeoutId = setTimeout(() => stopPreview(), dur * 1000);
-  updatePreviewProgress();
-}
-
-function stopPreview() {
-  if (previewEndTimeoutId) { clearTimeout(previewEndTimeoutId); previewEndTimeoutId = null; }
-  if (previewRafId) { cancelAnimationFrame(previewRafId); previewRafId = null; }
-  if (audioCtx) {
-    activeAudioNodes.forEach(node => {
-      try { if (node.stop) node.stop(); } catch(e) {}
-      try { node.disconnect(); } catch(e) {}
-    });
-  }
-  activeAudioNodes = [];
-  isPreviewPlaying = false;
-  playBtn.disabled = false;
-  stopBtn.disabled = true;
-  previewProgress.style.width = '0%';
-  previewTime.textContent = '0:00 / 0:00';
-}
-
-function updatePreviewProgress() {
-  if (!isPreviewPlaying || !audioCtx) return;
-  const elapsed = audioCtx.currentTime - previewStartCtxTime;
-  const pct = clamp((elapsed / lastBuiltDuration) * 100, 0, 100);
-  previewProgress.style.width = pct + '%';
-  previewTime.textContent = formatTime(elapsed) + ' / ' + formatTime(lastBuiltDuration);
-  if (pct < 100) {
-    previewRafId = requestAnimationFrame(updatePreviewProgress);
-  }
-}
+function updateStitchAvailability() { stitchBtn.disabled = clips.length < 2; }
+function updateGrooveDesc() { grooveDesc.textContent = GROOVE_COPY[grooveSelect.value] || ''; }
+function updateModeDesc() { modeDesc.textContent = MODE_COPY[mode] || ''; }
 
 /* ============================================================
    FILE IMPORT
    ============================================================ */
 async function handleFiles(files) {
-  const midiFiles = Array.from(files).filter(f =>
-    /\.(mid|midi)$/i.test(f.name) || f.type.includes('midi')
-  );
-  if (midiFiles.length === 0) {
-    setStatus('No MIDI files found in selection.', 'error');
-    return;
-  }
-
+  const midiFiles = Array.from(files).filter(f => /\.(mid|midi)$/i.test(f.name) || f.type.includes('midi'));
+  if (midiFiles.length === 0) { setStatus('No MIDI files found.', 'error'); return; }
   setStatus('Importing ' + midiFiles.length + ' file(s)...');
-
   for (const file of midiFiles) {
     try {
       const parsed = await parseMidiFile(file);
       const clip = {
-        id: ++clipIdCounter,
-        name: file.name.replace(/\.(mid|midi)$/i, ''),
-        midi: parsed.midi,
-        duration: parsed.duration,
-        originalBpm: parsed.originalBpm,
-        detectedKey: null
+        id: ++clipIdCounter, name: file.name.replace(/\.(mid|midi)$/i, ''),
+        midi: parsed.midi, duration: parsed.duration, originalBpm: parsed.originalBpm,
+        detectedKey: null, contentBars: 1, pitchShift: 0
       };
-      // Detect key immediately for display
       clip.detectedKey = detectKey(clip.midi);
+      clip.contentBars = computeClipContentBars(clip);
       clips.push(clip);
     } catch(err) {
-      setStatus('Failed to parse "' + file.name + '": ' + err.message, 'error');
-      return;
+      setStatus('Failed to parse "' + file.name + '": ' + err.message, 'error'); return;
     }
   }
-
   invalidateBuiltOutput();
   renderClipList();
   updateStitchAvailability();
   ingestZone.classList.add('has-files');
-  setStatus('Imported ' + midiFiles.length + ' clip(s). ' + clips.length + ' total in arrangement.', 'success');
+  setStatus('Imported ' + midiFiles.length + ' clip(s). ' + clips.length + ' total.', 'success');
 }
 
 /* ============================================================
-   STITCH BUTTON
+   STITCH ACTION
    ============================================================ */
 function doStitch() {
-  if (clips.length < 2) {
-    setStatus('Need at least 2 clips to stitch.', 'error');
-    return;
-  }
-
+  if (clips.length < 2) { setStatus('Need at least 2 clips to combine.', 'error'); return; }
   stitchBtn.disabled = true;
-  stitchBtn.textContent = 'Stitching...';
-  setStatus('Running harmonic analysis & stitch engine...');
-
-  // Use setTimeout to let UI update before heavy work
+  stitchBtn.textContent = mode === 'merge' ? 'Merging...' : 'Stitching...';
+  setStatus('Running harmonic analysis & ' + mode + ' engine...');
   setTimeout(() => {
     try {
       const result = buildStitchedMidi();
       currentBlobUrl = result.url;
       lastBuiltMidi = result.midi;
       lastBuiltDuration = result.duration;
-
       downloadLink.href = result.url;
       downloadLink.hidden = false;
       previewRow.hidden = false;
-
-      // Build a readable summary
       const lines = result.log;
-      const summary = lines.filter(l => !l.startsWith('  ')).join(' · ');
-      const bridges = lines.filter(l => l.includes('modulation bridge')).length;
-      const shifts = lines.filter(l => l.includes('transposed')).length;
-
+      const bridges = lines.filter(l => l.includes('bridge')).length;
+      const enriched = lines.filter(l => l.includes('Enriched')).length;
       setStatus(
-        'Stitched ' + clips.length + ' clips → ' + formatTime(result.duration) +
-        '. ' + (bridges ? bridges + ' modulation bridge(s)' : 'No bridges needed') +
-        (shifts ? ', ' + shifts + ' pitch-smoothed' : '') + '.',
+        (mode === 'merge' ? 'Merged ' : 'Stitched ') + clips.length + ' clips -> ' +
+        result.totalBars + ' bars (' + formatTime(result.duration) + '). ' +
+        (bridges ? bridges + ' bridge(s)' : 'No bridges needed') +
+        (enriched ? ', ' + enriched + ' melody(s) enriched' : '') +
+        '. Bass + pads generated. All tracks synced.',
         'success'
       );
-
       stitchBtn.disabled = false;
-      stitchBtn.textContent = 'Stitch Arrangement';
+      stitchBtn.textContent = mode === 'merge' ? 'Merge Arrangement' : 'Stitch Arrangement';
     } catch(err) {
-      setStatus('Stitch failed: ' + err.message, 'error');
+      setStatus((mode === 'merge' ? 'Merge' : 'Stitch') + ' failed: ' + err.message, 'error');
       stitchBtn.disabled = false;
-      stitchBtn.textContent = 'Stitch Arrangement';
+      stitchBtn.textContent = mode === 'merge' ? 'Merge Arrangement' : 'Stitch Arrangement';
     }
   }, 50);
 }
@@ -1521,49 +1370,44 @@ function doStitch() {
    ============================================================ */
 browseBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', e => { if (e.target.files.length) handleFiles(e.target.files); });
-
-// Drag-and-drop on ingest zone (desktop)
 ingestZone.addEventListener('dragover', e => { e.preventDefault(); ingestZone.classList.add('drag-over'); });
 ingestZone.addEventListener('dragleave', () => ingestZone.classList.remove('drag-over'));
-ingestZone.addEventListener('drop', e => {
-  e.preventDefault();
-  ingestZone.classList.remove('drag-over');
-  if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+ingestZone.addEventListener('drop', e => { e.preventDefault(); ingestZone.classList.remove('drag-over'); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+
+modeToggle.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    mode = btn.dataset.mode;
+    modeToggle.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b === btn));
+    stitchBtn.textContent = mode === 'merge' ? 'Merge Arrangement' : 'Stitch Arrangement';
+    updateModeDesc(); invalidateBuiltOutput();
+  });
 });
 
 tempoSlider.addEventListener('input', e => {
   tempoValue.textContent = e.target.value;
+  tempoNumber.value = e.target.value;
   invalidateBuiltOutput();
 });
-
-grooveSelect.addEventListener('change', () => {
-  updateGrooveDesc();
+tempoNumber.addEventListener('change', e => {
+  const v = clamp(parseInt(e.target.value) || 120, 40, 220);
+  tempoNumber.value = v; tempoSlider.value = v; tempoValue.textContent = v;
   invalidateBuiltOutput();
 });
-
+grooveSelect.addEventListener('change', () => { updateGrooveDesc(); invalidateBuiltOutput(); });
 stitchBtn.addEventListener('click', doStitch);
 playBtn.addEventListener('click', startPreview);
 stopBtn.addEventListener('click', stopPreview);
-
 resetBtn.addEventListener('click', () => {
-  clips = [];
-  clipIdCounter = 0;
-  invalidateBuiltOutput();
-  renderClipList();
-  updateStitchAvailability();
-  ingestZone.classList.remove('has-files');
-  fileInput.value = '';
+  clips = []; clipIdCounter = 0;
+  invalidateBuiltOutput(); renderClipList(); updateStitchAvailability();
+  ingestZone.classList.remove('has-files'); fileInput.value = '';
   setStatus('Workspace reset. Add MIDI files to begin.');
 });
 
 /* ============================================================
    INIT
    ============================================================ */
-function init() {
-  updateGrooveDesc();
-  renderClipList();
-  updateStitchAvailability();
-}
+function init() { updateModeDesc(); updateGrooveDesc(); renderClipList(); updateStitchAvailability(); }
 init();
 
 </script>
