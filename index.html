@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#100E0B">
-<title>Smart Multi-Track MIDI Stitcher</title>
+<title>Smart Multi-Track MIDI Stitcher & Merger</title>
 <style>
   :root{
     --bg:#100E0B;
@@ -20,6 +20,7 @@
     --amber-dim:#8C6526;
     --teal:#3FA796;
     --red:#D9553D;
+    --purple:#9D65C9;
     --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
     --font-mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
   }
@@ -156,7 +157,7 @@
     min-height:48px;
   }
   #ingestZone.has-files{
-    opacity:0.72;
+    opacity:0.85;
     border-color:var(--amber-dim);
   }
   #ingestZone.drag-over{
@@ -476,7 +477,7 @@
     <div class="brand">
       <div class="brand-mark" aria-hidden="true"></div>
       <div class="brand-text">
-        <h1>MIDI Stitcher</h1>
+        <h1>MIDI Stitcher & Merger</h1>
         <p>multi-track arrangement bench</p>
       </div>
     </div>
@@ -507,16 +508,29 @@
       <div class="section-label">Session Settings</div>
 
       <div class="control-row">
-        <label for="tempoSlider">Tempo <span class="value"><span id="tempoValue">120</span> BPM</span></label>
+        <label for="mergeModeSelect">Arrangement Mode</label>
+        <select id="mergeModeSelect">
+          <option value="sequential">Sequential Stitch (End-to-End Timeline)</option>
+          <option value="parallel">Parallel Layering (Merge Tracks Simultaneously)</option>
+        </select>
+        <p class="groove-desc" id="mergeModeDesc"></p>
+      </div>
+
+      <div class="control-row">
+        <label for="tempoSlider">Target Tempo <span class="value"><span id="tempoValue">120</span> BPM</span></label>
         <input type="range" id="tempoSlider" min="60" max="180" step="1" value="120">
       </div>
 
       <div class="control-row">
-        <label for="grooveSelect">Groove Profile</label>
+        <label for="grooveSelect">Groove & Drum Style</label>
         <select id="grooveSelect">
           <option value="lofi">Lo-Fi Hip Hop</option>
-          <option value="synthwave">Synthwave</option>
-          <option value="ambient">Ambient</option>
+          <option value="synthwave">Synthwave / Retrowave</option>
+          <option value="ambient">Ambient Pulse</option>
+          <option value="trap">Trap Bounce</option>
+          <option value="house">House (Four-on-the-Floor)</option>
+          <option value="funk">Funk Syncopated</option>
+          <option value="off">Off (Clean Clean Merge / No Added Groove)</option>
         </select>
         <p class="groove-desc" id="grooveDesc"></p>
       </div>
@@ -525,7 +539,7 @@
     <section>
       <div class="section-label">Output</div>
       <div class="actions">
-        <button type="button" class="action-btn" id="stitchBtn" disabled>Stitch Arrangement</button>
+        <button type="button" class="action-btn" id="stitchBtn" disabled>Process Arrangement</button>
 
         <div class="preview-row" id="previewRow" hidden>
           <button type="button" class="preview-btn" id="playBtn" aria-label="Play preview">&#9654;</button>
@@ -534,7 +548,7 @@
           <div class="preview-time" id="previewTime">0:00 / 0:00</div>
         </div>
 
-        <a id="downloadLink" download="stitched_multitrack_arrangement.mid" hidden>Download stitched_multitrack_arrangement.mid</a>
+        <a id="downloadLink" download="processed_multitrack_arrangement.mid" hidden>Download processed_multitrack_arrangement.mid</a>
         <button type="button" class="action-btn" id="resetBtn">Reset Workspace</button>
       </div>
       <div id="statusBar">Loading MIDI library...</div>
@@ -600,6 +614,8 @@ const ingestZone      = document.getElementById('ingestZone');
 const browseBtn       = document.getElementById('browseBtn');
 const fileInput       = document.getElementById('fileInput');
 const arrangementList = document.getElementById('arrangementList');
+const mergeModeSelect = document.getElementById('mergeModeSelect');
+const mergeModeDesc   = document.getElementById('mergeModeDesc');
 const tempoSlider     = document.getElementById('tempoSlider');
 const tempoValue      = document.getElementById('tempoValue');
 const grooveSelect    = document.getElementById('grooveSelect');
@@ -614,10 +630,19 @@ const stopBtn         = document.getElementById('stopBtn');
 const previewProgress = document.getElementById('previewProgress');
 const previewTime     = document.getElementById('previewTime');
 
+const MODE_COPY = {
+  sequential: "Stitches clips back-to-back into one continuous chronological song with smart crossfades.",
+  parallel: "Merges all clips simultaneously into a single multi-track file layered on top of each other."
+};
+
 const GROOVE_COPY = {
-  lofi: "Laid-back boom-bap pocket. Kick on 1, snare dragged a hair behind the grid, loose 8th-note hats.",
-  synthwave: "Driving four-on-the-floor. Kick and hats locked dead to the quarter-note grid, no drag.",
-  ambient: "Sparse pulse. A soft kick and distant hat every other bar, lots of open space."
+  lofi: "Laid-back boom-bap pocket. Soft swung kick, delayed snare, loose hats.",
+  synthwave: "Driving synthwave pattern. Punchy quarter-note kick and bright snare on 2 & 4.",
+  ambient: "Sparse ambient pulse. Subtle kick and open space every two bars.",
+  trap: "Rapid 16th/32nd hi-hat rolls with heavy downbeat kick and sharp snare.",
+  house: "Four-on-the-floor dance rhythm with offbeat open hats.",
+  funk: "Syncopated funk groove with dynamic velocity accents.",
+  off: "No extra drum groove added. Leaves original track notes untouched."
 };
 
 /* ============================================================
@@ -642,7 +667,8 @@ function updateStitchAvailability(){
   stitchBtn.disabled = clips.length < 2;
 }
 
-function updateGrooveDesc(){
+function updateDescriptions(){
+  mergeModeDesc.textContent = MODE_COPY[mergeModeSelect.value] || '';
   grooveDesc.textContent = GROOVE_COPY[grooveSelect.value] || '';
 }
 
@@ -743,7 +769,7 @@ function renderClipList(){
   if (clips.length === 0){
     const placeholder = document.createElement('div');
     placeholder.className = 'placeholder';
-    placeholder.textContent = 'No clips yet — imported files will line up here for reordering.';
+    placeholder.textContent = 'No clips yet — imported files will line up here for reordering and merging.';
     arrangementList.appendChild(placeholder);
     return;
   }
@@ -857,6 +883,8 @@ function addDrumHit(track, note, time, velBase, allowSwing, extraLag){
 }
 
 function applyGroovePattern(drumTrack, groove, totalDuration, bpm){
+  if (groove === 'off') return;
+
   const beatLen = 60 / bpm;
   const barLen = beatLen * 4;
   const totalBars = Math.max(1, Math.ceil(totalDuration / barLen));
@@ -871,7 +899,7 @@ function applyGroovePattern(drumTrack, groove, totalDuration, bpm){
       for (let e = 0; e < 8; e++){
         addDrumHit(drumTrack, GM_HIHAT, barStart + e * 0.5 * beatLen, e % 2 === 0 ? 0.4 : 0.3, true);
       }
-    } else if (groove === 'synthwave'){
+    } else if (groove === 'synthwave' || groove === 'house'){
       for (let b = 0; b < 4; b++){
         addDrumHit(drumTrack, GM_KICK, barStart + b * beatLen, 0.9, false);
         addDrumHit(drumTrack, GM_HIHAT, barStart + b * beatLen + beatLen / 2, 0.5, false);
@@ -883,16 +911,31 @@ function applyGroovePattern(drumTrack, groove, totalDuration, bpm){
         addDrumHit(drumTrack, GM_KICK, barStart, 0.5, true);
         addDrumHit(drumTrack, GM_HIHAT, barStart + 2 * beatLen, 0.25, true);
       }
+    } else if (groove === 'trap'){
+      addDrumHit(drumTrack, GM_KICK, barStart, 0.9, false);
+      addDrumHit(drumTrack, GM_SNARE, barStart + 2 * beatLen, 0.85, false);
+      for (let e = 0; e < 16; e++){
+        addDrumHit(drumTrack, GM_HIHAT, barStart + e * 0.25 * beatLen, e % 4 === 0 ? 0.6 : 0.35, false);
+      }
+    } else if (groove === 'funk'){
+      addDrumHit(drumTrack, GM_KICK, barStart, 0.85, true);
+      addDrumHit(drumTrack, GM_KICK, barStart + 1.75 * beatLen, 0.7, true);
+      addDrumHit(drumTrack, GM_SNARE, barStart + 1 * beatLen, 0.8, true);
+      addDrumHit(drumTrack, GM_SNARE, barStart + 3 * beatLen, 0.8, true);
+      for (let e = 0; e < 8; e++){
+        addDrumHit(drumTrack, GM_HIHAT, barStart + e * 0.5 * beatLen, 0.45, true);
+      }
     }
   }
 }
 
 /* ============================================================
-   Stitch engine
+   Stitch & Merge engine
    ============================================================ */
 function buildStitchedMidi(){
   if (!MidiClass) throw new Error('MIDI library not loaded');
   const bpm = Number(tempoSlider.value);
+  const mode = mergeModeSelect.value;
   const groove = grooveSelect.value;
 
   const output = new MidiClass();
@@ -913,13 +956,14 @@ function buildStitchedMidi(){
   const clipCount = clips.length;
 
   let timelineCursor = 0;
+  let maxParallelDuration = 0;
 
   clips.forEach((clip, clipIndex) => {
     const tempoRatio = clip.originalBpm / bpm;
     const scaledClipDuration = Math.max(0.1, (clip.duration || 1) * tempoRatio);
     const crossfade = Math.min(baseCrossfade, scaledClipDuration / 2);
 
-    const clipStart = timelineCursor;
+    const clipStart = mode === 'parallel' ? 0 : timelineCursor;
     let clipMaxTime = 0;
     let melodicIndex = 0;
 
@@ -935,13 +979,15 @@ function buildStitchedMidi(){
         const downbeat = isDownbeat(scaledTime, bpm);
         let velocity = humanizeVelocity(note.velocity, downbeat);
 
-        if (clipIndex > 0 && scaledTime < crossfade){
-          velocity *= clamp(scaledTime / crossfade, 0.35, 1);
-        }
-        if (clipIndex < clipCount - 1){
-          const distFromEnd = scaledClipDuration - noteEnd;
-          if (distFromEnd < crossfade){
-            velocity *= clamp(distFromEnd / crossfade, 0.35, 1);
+        if (mode === 'sequential'){
+          if (clipIndex > 0 && scaledTime < crossfade){
+            velocity *= clamp(scaledTime / crossfade, 0.35, 1);
+          }
+          if (clipIndex < clipCount - 1){
+            const distFromEnd = scaledClipDuration - noteEnd;
+            if (distFromEnd < crossfade){
+              velocity *= clamp(distFromEnd / crossfade, 0.35, 1);
+            }
           }
         }
         velocity = clamp(velocity, 0.12, 1);
@@ -978,20 +1024,26 @@ function buildStitchedMidi(){
     });
 
     if (clipMaxTime === 0) clipMaxTime = scaledClipDuration;
-    const clipEnd = clipStart + Math.ceil(clipMaxTime);
 
-    timelineCursor = clipIndex < clipCount - 1
-      ? Math.max(clipStart + 0.5, clipEnd - crossfade)
-      : clipEnd;
+    if (mode === 'parallel'){
+      maxParallelDuration = Math.max(maxParallelDuration, clipMaxTime);
+    } else {
+      const clipEnd = clipStart + Math.ceil(clipMaxTime);
+      timelineCursor = clipIndex < clipCount - 1
+        ? Math.max(clipStart + 0.5, clipEnd - crossfade)
+        : clipEnd;
+    }
   });
 
-  applyGroovePattern(drumTrack, groove, timelineCursor, bpm);
+  const totalDuration = mode === 'parallel' ? maxParallelDuration : timelineCursor;
+
+  applyGroovePattern(drumTrack, groove, totalDuration, bpm);
 
   const bytes = output.toArray();
   const blob = new Blob([bytes], { type: 'audio/midi' });
   const url = URL.createObjectURL(blob);
 
-  return { url, midi: output, duration: timelineCursor };
+  return { url, midi: output, duration: totalDuration };
 }
 
 /* ============================================================
@@ -1184,9 +1236,9 @@ fileInput.addEventListener('change', async (e) => {
   updateStitchAvailability();
 
   if (clips.length >= 2){
-    setStatus(clips.length + ' clips loaded. Drag to reorder, then stitch.');
+    setStatus(clips.length + ' clips loaded. Choose merge settings, then process.');
   } else if (clips.length === 1){
-    setStatus('One clip loaded — add at least one more to stitch.');
+    setStatus('One clip loaded — add at least one more to merge.');
   }
 });
 
@@ -1212,24 +1264,29 @@ ingestZone.addEventListener('drop', (e) => {
   }
 });
 
+mergeModeSelect.addEventListener('change', () => {
+  updateDescriptions();
+  invalidateBuiltOutput();
+});
+
 tempoSlider.addEventListener('input', () => {
   tempoValue.textContent = tempoSlider.value;
 });
 tempoSlider.addEventListener('change', invalidateBuiltOutput);
 
 grooveSelect.addEventListener('change', () => {
-  updateGrooveDesc();
+  updateDescriptions();
   invalidateBuiltOutput();
 });
 
 stitchBtn.addEventListener('click', () => {
   if (clips.length < 2){
-    setStatus('Add at least two MIDI files before stitching.', 'error');
+    setStatus('Add at least two MIDI files before merging.', 'error');
     return;
   }
 
   stopPreview();
-  setStatus('Compiling multi-track arrangement...');
+  setStatus('Processing arrangement...');
   stitchBtn.disabled = true;
 
   requestAnimationFrame(() => {
@@ -1249,10 +1306,11 @@ stitchBtn.addEventListener('click', () => {
       previewProgress.style.width = '0%';
       previewTime.textContent = '0:00 / ' + formatTime(lastBuiltDuration);
 
-      setStatus('Stitched ' + clips.length + ' clips into one continuous arrangement (~' + formatTime(lastBuiltDuration) + '). Preview it, then export.', 'success');
+      const modeLabel = mergeModeSelect.value === 'parallel' ? 'layered' : 'stitched';
+      setStatus('Successfully ' + modeLabel + ' ' + clips.length + ' clips (~' + formatTime(lastBuiltDuration) + '). Preview or download below.', 'success');
     } catch (err){
       console.error(err);
-      setStatus('Stitch failed: ' + err.message, 'error');
+      setStatus('Processing failed: ' + err.message, 'error');
     } finally {
       updateStitchAvailability();
     }
@@ -1270,10 +1328,11 @@ resetBtn.addEventListener('click', () => {
 
   invalidateBuiltOutput();
 
+  mergeModeSelect.value = 'sequential';
   tempoSlider.value = 120;
   tempoValue.textContent = '120';
   grooveSelect.value = 'lofi';
-  updateGrooveDesc();
+  updateDescriptions();
 
   renderClipList();
   updateStitchAvailability();
@@ -1283,7 +1342,7 @@ resetBtn.addEventListener('click', () => {
 /* ============================================================
    Init
    ============================================================ */
-updateGrooveDesc();
+updateDescriptions();
 renderClipList();
 updateStitchAvailability();
 </script>
