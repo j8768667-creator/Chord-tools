@@ -8,7 +8,7 @@
     <meta name="apple-mobile-web-app-title" content="MIDI Stitcher">
     <title>Smart Multi-Track MIDI Stitcher</title>
     <script src="https://cloudflare.com"></script>
-    <script src="https://unpkg.com"></script>
+    <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         html, body { position: fixed; width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none; -webkit-overflow-scrolling: touch; }
         * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; touch-action: manipulation; }
@@ -67,7 +67,7 @@
             <button id="btn-download" class="touch-target" style="border-color: #0071e3; color: #0071e3; font-weight: 600; margin-top:12px;" disabled>📥 Download Multi-Track MIDI</button>
         </section>
     </main>
-        <script>
+      <script>
         document.addEventListener('DOMContentLoaded', () => {
             const uploader = document.getElementById('midi-uploader');
             const workspace = document.getElementById('timeline-workspace');
@@ -87,7 +87,8 @@
                 for (const file of files) {
                     const buffer = await file.arrayBuffer();
                     try {
-                        const parsedMidi = new Midi(buffer);
+                        const uint8Data = new Uint8Array(buffer);
+                        const parsedMidi = new Midi(uint8Data);
                         const fileId = 'midi_' + Math.random().toString(36).substr(2, 9);
                         uploadedFilesData.push({ id: fileId, name: file.name, midi: parsedMidi });
                         renderTrackBlock(fileId, file.name);
@@ -95,7 +96,7 @@
                 }
             });
 
-            function renderTrackBlock(id, name) {
+            %20%20%20%20%20%20%20%20%20%20%20%20function%20renderTrackBlock(id,%20name)%20%7B
                 const card = document.createElement('div');
                 card.className = 'midi-track-block';
                 card.dataset.id = id;
@@ -180,4 +181,4 @@
     </script>
 </body>
 </html>
-
+  
