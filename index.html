@@ -486,7 +486,15 @@
 </div>
 
 <script type="module">
-import { Midi } from "https://unpkg.com/@tonejs/midi@2.0.28/dist/Midi.js";
+let Midi;
+try {
+  ({ Midi } = await import("https://esm.sh/@tonejs/midi@2.0.28"));
+} catch (libErr){
+  console.error('Failed to load @tonejs/midi from CDN:', libErr);
+  const bar = document.getElementById('statusBar');
+  bar.textContent = 'Could not load the MIDI library (no connection to esm.sh?). Import/export will not work until this loads.';
+  bar.classList.add('error');
+}
 
 /* ============================================================
    State
@@ -570,6 +578,7 @@ function humanizeVelocity(baseVelocity, downbeat){
    MIDI parsing / note density preview
    ============================================================ */
 async function parseMidiFile(file){
+  if (!Midi) throw new Error('MIDI library not loaded');
   const buffer = await file.arrayBuffer();
   const midi = new Midi(buffer);
   let duration = midi.duration;
@@ -753,6 +762,7 @@ function applyGroovePattern(drumTrack, groove, totalDuration, bpm){
    Stitch engine
    ============================================================ */
 function buildStitchedMidi(){
+  if (!Midi) throw new Error('MIDI library not loaded');
   const bpm = Number(tempoSlider.value);
   const groove = grooveSelect.value;
 
