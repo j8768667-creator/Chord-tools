@@ -12,9 +12,9 @@
   --text:#d8d8e2; --dim:#7a7a8c; --accent:#e0642a; --accent-glow:rgba(224,100,42,.45);
   --accent2:#2d9d78; --accent3:#4a6fd4; --danger:#d9455a; --mono:'SF Mono','Courier New',monospace;
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation;}
-input,select,textarea{user-select:text;}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,'Inter',system-ui,sans-serif;overflow:hidden;touch-action:manipulation;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;-webkit-touch-callout:none;user-select:none;touch-action:manipulation;}
+input,select,textarea{-webkit-user-select:text;user-select:text;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,'Inter',system-ui,sans-serif;overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none;}
 body{display:flex;flex-direction:column;height:100dvh;}
 ::-webkit-scrollbar{width:6px;height:6px;}
 ::-webkit-scrollbar-thumb{background:#2a2a38;border-radius:3px;}
@@ -50,7 +50,7 @@ select,input[type=number],input[type=text],textarea{width:100%;background:var(--
 select:focus,input:focus,textarea:focus{outline:none;border-color:var(--accent);}
 input[type=file]{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:7px;padding:8px;font-size:12px;}
 input[type=checkbox]{width:16px;height:16px;min-height:auto;accent-color:var(--accent);}
-input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:30px;}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:30px;touch-action:none;-webkit-user-drag:none;}
 input[type=range]::-webkit-slider-runnable-track{height:4px;background:#22222e;border-radius:2px;}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;margin-top:-7px;height:18px;width:18px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent-glow);}
 
