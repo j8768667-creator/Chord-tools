@@ -1,80 +1,58 @@
-Below is a **complete, self‑contained HTML app** that
-
-* prevents double‑tap zoom on iPads,  
-* keeps the file selector enabled,  
-* lets the user import a MIDI file, selects a style & BPM, generates chord, melody & drum tracks,  
-* provides a **Play / Stop** button that actually renders and hears the generated material (using **Tone.js**), and  
-* is sized for an iPad 10.9 (1640 × 1192) screen – no unwanted zoom or scroll‑jank.
-
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- 1️⃣  Prevent double‑tap zoom on iOS -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- ✅ iPad‑safe viewport -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
   <title>Harmony Generator</title>
 
-  <!-- 2️⃣  Tone.js for audio synthesis -->
-  <script src="https://cdn.jsdelivr.net/npm/tone@14.8.39/build/Tone.js"></script>
+  <!-- Tone.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/tone@14.8.39/build/Tone.min.js"></script>
 
-  <!-- 3️⃣  Tailwind (via CDN) for rapid styling -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* Guard against double‑tap zoom on iOS */
-    body { touch-action: manipulation; }
+    /* Guard double‑tap zoom everywhere */
+    html, body { touch-action: manipulation; }
 
-    /* ----- Buttons ----- */
-    .btn { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md font-medium transition-all; }
-    .btn-primary { @apply bg-indigo-500 text-white hover:bg-indigo-600; }
-    .btn-secondary { @apply bg-gray-700 text-gray-200 hover:bg-gray-600; }
-    .btn-danger  { @apply bg-red-600 text-white hover:bg-red-700; }
+    .btn        { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md font-medium transition-all; }
+    .btn-primary   { @apply bg-indigo-500 text-white hover:bg-indigo-600; }
+    .btn-secondary   { @apply bg-gray-700 text-gray-200 hover:bg-gray-600; }
     .btn-disabled { @apply opacity-50 cursor-not-allowed; }
-
-    /* ----- Style cards ----- */
-    .style-card { @apply p-4 rounded-lg border border-gray-600 hover:border-indigo-500 transition-all; }
+    .style-card   { @apply p-4 rounded-lg border border-gray-600 hover:border-indigo-500 transition-all; }
     .style-card.selected { @apply border-indigo-500 shadow-lg; }
-
-    /* ----- Piano‑roll keys ----- */
     .piano-roll { @apply relative bg-gray-800 rounded-md overflow-hidden; }
-    .key { @apply h-8 w-8 relative; }
-    .key-white { @apply bg-gray-900; }
-    .key-black { @apply bg-gray-700 absolute left-2/3 -top-1 w-4 h-12; }
-    .key.active  { @apply bg-indigo-500; }
-
-    /* ----- Misc ----- */
-    .font-mono { font-family: 'Share Tech Mono', monospace; }
+    .key          { @apply h-8 w-8 relative; }
+    .key-white    { @apply bg-gray-900; }
+    .key-black    { @apply bg-gray-700 absolute left-2/3 -top-1 w-4 h-12; }
+    .key.active   { @apply bg-indigo-500; }
+    .font-mono    { font-family: 'Share Tech Mono', monospace; }
   </style>
 </head>
 
 <body class="bg-gray-900 text-gray-200 min-h-screen p-4 md:p-6">
-  <!-- ====================== HEADER ====================== -->
   <header class="mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
     <h1 class="text-2xl md:text-3xl font-bold tracking-tight">
       <span class="font-mono">Harmony Generator</span>
     </h1>
-    <div class="flex items-center gap-3">
-      <span id="bpm-display" class="text-sm text-indigo-400 font-mono">120 BPM</span>
-      <button id="help-btn" class="btn btn-secondary">Help</button>
-    </div>
+    <span id="bpm-display" class="text-sm text-indigo-400 font-mono">120 BPM</span>
   </header>
 
-  <!-- ====================== MAIN LAYOUT ====================== -->
   <main class="grid grid-cols-1 md:grid-cols-2 gap-6">
-    <!-- LEFT PANEL – CONTROLS -->
+    <!-- ===== LEFT PANEL ===== -->
     <section class="space-y-4">
-      <!-- MIDI import -->
       <div>
         <label class="block text-sm font-medium mb-2">Import MIDI File</label>
-        <input type="file" accept=".mid,.midi" id="midi-input" class="input-field w-full p-2 rounded-md bg-gray-800 border border-gray-600 text-gray-200">
+        <input type="file" accept=".mid,.midi" id="midi-input" class="w-full p-2 rounded-md bg-gray-800 border border-gray-600 text-gray-200">
         <p class="text-xs text-gray-500 mt-1">Supported: .mid, .midi</p>
       </div>
 
-      <!-- Manual chord entry -->
       <details class="group">
         <summary class="cursor-pointer text-sm font-medium text-indigo-400 flex items-center gap-2">
-          <svg w="16" h="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2v4M12 20v4M4.93 4.93l2.83 2.83M15.73 15.73l2.83 2.83M1 12l4-4 4 4M20 12l-4-4 4-4M4.93 19.07l2.83-2.83M15.73 8.27l2.83-2.83"/>
           </svg>
           Manual Chord Input
@@ -85,67 +63,45 @@ Below is a **complete, self‑contained HTML app** that
         </div>
       </details>
 
-      <!-- Style selector -->
       <div>
         <label class="block text-sm font-medium mb-3">Select Style</label>
         <div id="style-grid" class="grid grid-cols-2 md:grid-cols-5 gap-2"></div>
       </div>
 
-      <!-- BPM control -->
       <div>
         <label class="block text-sm font-medium mb-2">Tempo (BPM)</label>
         <input type="number" id="bpm-input" min="40" max="300" value="120"
-               class="input-field w-32 p-2 rounded-md bg-gray-800 border border-gray-600 text-gray-200">
-        <p class="text-xs text-gray-500 mt-1">Default: Auto‑detected from MIDI</p>
+               class="w-32 p-2 rounded-md bg-gray-800 border border-gray-600 text-gray-200">
       </div>
 
-      <!-- Chord‑length selector -->
-      <div>
-        <label class="block text-sm font-medium mb-2">Chord Length</label>
-        <div class="grid grid-cols-3 gap-2">
-          <button class="btn btn-secondary" data-length="1">1 bar</button>
-          <button class="btn btn-secondary" data-length="2">2 bars</button>
-          <button class="btn btn-secondary" data-length="4">4 bars</button>
-          <button class="btn btn-primary"   data-length="8">8 bars</button>
-        </div>
-        <p class="text-xs text-gray-500 mt-1">Length of generated chord progression</p>
-      </div>
-
-      <!-- Action buttons -->
       <div class="pt-4 border-t border-gray-600">
         <button id="generate-btn" class="btn btn-primary w-full" disabled>Generate Harmony</button>
-        <button id="export-btn"   class="btn btn-secondary w-full mt-3" disabled>Export Multi‑Track</button>
+        <button id="export-btn"   class="btn btn-secondary w-full mt-3" disabled>Export Multi-Track</button>
         <button id="play-btn"     class="btn btn-primary w-full mt-3 btn-disabled" disabled>Play</button>
       </div>
     </section>
 
-    <!-- RIGHT PANEL – VISUALIZER -->
+    <!-- ===== RIGHT PANEL ===== -->
     <section class="space-y-4">
-      <!-- Detected file info -->
       <div id="detected-info" class="hidden">
         <div id="chord-display" class="p-3 bg-gray-800 rounded-md font-mono">No file loaded</div>
         <p id="key-display"     class="text-sm text-gray-500 mt-1">Key: --</p>
-        <p id="scale-display"   class="text-sm text-gray-500">Scale: --</p>
       </div>
 
-      <!-- Piano‑roll canvas -->
       <div>
         <label class="block text-sm font-medium mb-2">Piano Roll Visualization</label>
         <div id="piano-roll" class="piano-roll h-[200px]"></div>
-        <p class="text-xs text-gray-500 text-center mt-2">Load a MIDI file to see analysis</p>
       </div>
 
-      <!-- Track “cards” -->
       <div class="grid grid-cols-3 gap-3">
         <div class="track track-chords bg-indigo-700 p-2 rounded-md text-[10px] text-gray-400">Chords</div>
         <div class="track track-melody bg-amber-700 p-2 rounded-md text-[10px] text-gray-400">Melody</div>
         <div class="track track-drums bg-pink-700 p-2 rounded-md text-[10px] text-gray-400">Drums</div>
       </div>
 
-      <!-- Generated chord list -->
       <details>
         <summary class="cursor-pointer text-sm font-medium text-indigo-400 flex items-center gap-2">
-          <svg w="16" h="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
             <polyline points="14 2 14 8 20 8"/>
             <line points="16 13 21 13"/>
@@ -160,315 +116,228 @@ Below is a **complete, self‑contained HTML app** that
     </section>
   </main>
 
-  <!-- HELP MODAL -->
+  <!-- Help Modal -->
   <div id="help-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden">
     <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full">
       <h2 class="text-xl font-bold mb-4">How It Works</h2>
-      <ol class="list-decimal pl-5 space-y-3 text-sm">
-        <li><strong>Import MIDI</strong> – Upload a MIDI file to analyse chords, key, and BPM.</li>
-        <li><strong>Select Style</strong> – Choose from 10 styles that define harmonic & melodic generation.</li>
-        <li><strong>Adjust BPM</strong> – Change tempo if needed (auto‑detected by default).</li>
-        <li><strong>Generate</strong> – Create chord, melody, and drum tracks matching the style.</li>
-        <li><strong>Play</strong> – Hear the generated tracks instantly.</li>
-        <li><strong>Export</strong> – Download each track as a separate MIDI file.</li>
+      <ol class="list-decimal pl-5 space-y-2 text-sm">
+        <li><strong>Import MIDI</strong> – Analyse chords, key & BPM.</li>
+        <li><strong>Select Style</strong> – Determines harmony & melody rules.</li>
+        <li><strong>Edit BPM if needed.</strong></li>
+        <li><strong>Generate</strong> – Create chord, melody & drum tracks.</li>
+        <li><strong>Play</strong> – Hear the generated material.</li>
+        <li><strong>Export</strong> – Download separate tracks.</li>
       </ol>
-      <button id="close-modal" class="btn btn-primary mt-6 w-auto">Close</button>
+      <button id="close-modal" class="btn btn-primary mt-4 w-auto">Close</button>
     </div>
   </div>
 
-  <!-- ====================== SCRIPT ====================== -->
   <script>
-    // -------------------------------------------------
-    // 1️⃣ Global state
-    // -------------------------------------------------
+    // ======================= STATE =======================
     const state = {
-      midiFile: null,
       analysis: null,
       selectedStyle: 'pop',
       bpm: 120,
       chordLength: '4',
       generatedTracks: { chords: [], melody: [], drums: [] },
-      synth: {},          // Tone.js objects
-      isPlaying: false,
+      isPlaying: false
     };
 
-    // -------------------------------------------------
-    // 2️⃣ Style definitions
-    // -------------------------------------------------
     const styles = {
-      hiphop:  { name: 'Hip‑Hop/Rap',   pattern: 'minimal' },
-      pop:     { name: 'Pop',           pattern: 'I‑V‑vi‑IV' },
+      hiphop:  { name: 'Hip-Hop/Rap',   pattern: 'minimal' },
+      pop:     { name: 'Pop',           pattern: 'I-V-vi-IV' },
       rock:    { name: 'Rock',          pattern: 'power' },
-      country: { name: 'Country',       pattern: 'I‑IV‑V' },
-      edm:     { name: 'EDM',           pattern: 'synth‑pad' },
-      latin:   { name: 'Latin',         pattern: 'i‑iv‑V' },
+      country: { name: 'Country',       pattern: 'I-IV-V' },
+      edm:     { name: 'EDM',           pattern: 'synth-pad' },
+      latin:   { name: 'Latin',         pattern: 'i-iv-V' },
       cinematic:{ name: 'Cinematic',    pattern: 'orchestral' },
       rnb:     { name: 'R&B/Soul',      pattern: 'extended' },
       ambient: { name: 'Ambient',       pattern: 'drone' },
       classical:{ name: 'Classical',    pattern: 'functional' }
     };
 
-    // -------------------------------------------------
-    // 3️⃣ Mock MIDI analysis (replace with real parser)
-    // -------------------------------------------------
-    function analyzeMidi(file) {
+    // ======================= UI =======================
+    const styleGrid = document.getElementById('style-grid');
+    Object.entries(styles).forEach(([key, style]) => {
+      const card = document.createElement('div');
+      card.className = 'style-card';
+      card.innerHTML = `
+        <div class="flex items-start gap-2">
+          <div class="w-8 h-8 rounded flex items-center justify-center">
+            <svg class="h-4 w-4" fill="none" stroke="${key === state.selectedStyle ? 'var(--accent)' : 'var(--muted)'}"
+                 stroke-width="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M8 12l2 2 4-4"/>
+            </svg>
+          </div>
+          <div><div class="font-medium">${style.name}</div><div class="text-[10px] text-gray-500">${style.pattern}</div></div>
+        </div>`;
+      card.onclick = () => selectStyle(key);
+      styleGrid.appendChild(card);
+    });
+
+    function selectStyle(key) {
+      state.selectedStyle = key;
+      document.querySelectorAll('.style-card').forEach(c => c.classList.remove('selected'));
+      document.querySelector(`.style-card:nth-child("${Object.keys(styles).indexOf(key)}")`).classList.add('selected');
+      if (state.analysis) {
+        document.getElementById('chord-display').textContent = 'Style: ' + styles[key].name;
+      }
+    }
+
+    // ======================= AUDIO =======================
+    // Pre-create synths at start so Tone.js can start later without extra gesture
+    const synth = {
+      chords: new Tone.PolySynth(Tone.MembraneSynth, {
+        volume: -12
+      }).toDestination(),
+      melody: new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.1, release: 0.2 } }).toDestination(),
+      drums:  new Tone.MembraneSynth({ volume: -10 }).toDestination()
+    };
+
+    function getMidiNumber(note) {
+      const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      const noteName = note.replace(/[0-9]/g, '');
+      const octave = parseInt(note.slice(-1));
+      const idx = notes.indexOf(noteName);
+      return (octave + 1) * 12 + idx;
+    }
+
+    function chordToMidiNotes(chordName) {
+      const map = { C:0, 'C#':1, D:2, 'D#':3, E:4, F:5, 'F#':6, G:7, 'G#':8, A:9, 'A#':10, B:11 };
+      const isMinor = chordName.includes('m');
+      const root = chordName.replace(/[m79]/g, '').replace('maj', '');
+      const rootIdx = map[root];
+      const intv = isMinor ? [0, 3, 7] : [0, 4, 7];
+      return intv.map(i => (rootIdx + i) % 12);
+    }
+
+    async function playTracks(tracks) {
+      await Tone.start();
+      const transport = Tone.Transport;
+      transport.bpm.value = state.bpm;
+      transport.position = 0;
+
+      // Simple sequence player
+      let tick = 0;
+      const duration = '4n';
+
+      // Schedule chords
+      tracks.chords.forEach((ch, i) => {
+        const notes = chordToMidiNotes(ch);
+        const time = `${i * duration}`;
+        notes.forEach(n => synth.chords.triggerAttack(Tone.Frequency(n, 'c4'), time));
+        synth.chords.triggerRelease(time + '2n');
+      });
+
+      // Schedule melody
+      tracks.melody.forEach((n, i) => {
+        synth.melody.triggerAttack(n.note, `${i * duration}`, n.velocity ?? 1);
+      });
+
+      // Schedule drums (kick / snare / hihat pattern)
+      const kick = synth.drums, snare = synth.drums, hihat = synth.drums;
+      tracks.drums.forEach((d, i) => {
+        const t = `${i * '8n'}`;
+        if (d.instrument === 'kick') {
+          kick.triggerAttackRelease('C2', '8n', t, d.velocity);
+        } else if (d.instrument === 'snare') {
+          snare.triggerAttackRelease('D2', '8n', t, d.velocity);
+        } else {
+          hihat.triggerAttackRelease('E2', '8n', t, d.velocity);
+        }
+      });
+
+      transport.start();
+    }
+
+    // ======================= ANALYSIS =======================
+    async function analyzeMidi(file) {
       return new Promise(resolve => {
         const reader = new FileReader();
         reader.onload = () => {
           setTimeout(() => {
-            resolve({
-              chords: ['Cmaj7', 'G7', 'Am', 'Fmaj7'],
-              key: 'C Major',
-              bpm: 120
-            });
-          }, 400);
+            resolve({ chords: ['Cmaj7', 'G7', 'Am', 'Fmaj7'], key: 'C Major', bpm: 120 });
+          }, 200);
         };
         reader.readAsArrayBuffer(file);
       });
     }
 
-    // -------------------------------------------------
-    // 4️⃣ Generation helpers
-    // -------------------------------------------------
-    function generateChords(baseProgression, styleKey) {
-      const style = styles[styleKey];
-      const roots = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-      const chords = [];
-      for (let i = 0; i < baseProgression.length; i++) {
-        const root = roots[i % roots.length];
-        const quality = style.pattern === 'minimal' ? 'm' : '';
-        chords.push(`${root}${quality}`);
-      }
-      return chords;
-    }
-
-    function generateMelody(chords, key, bpm, styleKey) {
-      const scale = ['C','D','E','F','G','A','B'];
-      const melody = [];
-      chords.forEach(chord => {
-        const rootIdx = scale.indexOf(chord.replace(/[m]/g,''));
-        const seq = [rootIdx, (rootIdx+2)%7, (rootIdx+4)%7];
-        seq.forEach(i => melody.push({ note: scale[i], duration: '4n', velocity: 0.8 }));
-      });
-      return melody;
-    }
-
-    function generateDrums(bars, styleKey) {
-      const steps = bars * 4;
-      return Array.from({length: steps}, (_,i)=>({
-        instrument: i%4===0?'kick' : i%4===2?'snare':'hihat',
-        step: i,
-        duration: '8n',
-        velocity: 0.7
-      }));
-    }
-
-    // -------------------------------------------------
-    // 5️⃣ UI rendering
-    // -------------------------------------------------
-    function renderStyleGrid() {
-      const grid = document.getElementById('style-grid');
-      grid.innerHTML = '';
-      Object.entries(styles).forEach(([key, style]) => {
-        const card = document.createElement('div');
-        card.className = `style-card ${key===state.selectedStyle?'selected':''}`;
-        card.innerHTML = `
-          <div class="flex items-start gap-3">
-            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0">
-              <svg class="h-5 w-5" fill="none" stroke="${key===state.selectedStyle?'var(--accent)':'var(--muted)'}" stroke-width="2"
-                    viewBox="0 0 24 24">
-                <path d="M12 2v4M12 20v4M4.93 4.93l2.83 2.83M15.73 15.73l2.83 2.83M1 12l4-4 4 4M20 12l-4-4 4-4M4.93 19.07l2.83-2.83M15.73 8.27l2.83-2.83"/>
-              </svg>
-            </div>
-            <div class="flex-1">
-              <h3 class="font-medium">${style.name}</h3>
-              <p class="text-[var(--muted)] text-xs">${style.pattern}</p>
-            </div>
-          </div>`;
-        card.onclick = () => selectStyle(key);
-        grid.appendChild(card);
-      });
-    }
-
-    function selectStyle(key) {
-      state.selectedStyle = key;
-      renderStyleGrid();
-      if (state.analysis) {
-        document.getElementById('chord-display').textContent = `Style: ${styles[key].name}`;
-      }
-    }
-
-    function buildPianoRoll(tracks) {
-      const container = document.getElementById('piano-roll');
-      container.innerHTML = '';
-
-      const totalKeys = 49; // A0‑C6
-      for (let i=0;i<totalKeys;i++) {
-        const isBlack = [1,3,6,8,10].includes(i%12);
-        const keyEl = document.createElement('div');
-        keyEl.className = `key ${isBlack?'key-black':'key-white'}`;
-        keyEl.dataset.idx = i;
-        keyEl.innerHTML = `<span class="key-label font-[9px] text-[var(--muted)] absolute top-1 left-1/2 transform -translate-x-1/2">${String.fromCharCode(65+i)}</span>`;
-        container.appendChild(keyEl);
-      }
-
-      // Activate chords (indigo)
-      tracks.chords.forEach(ch => {
-        const notes = parseChord(ch);
-        notes.forEach(note => {
-          const idx = noteToIdx(note);
-          if (idx!==null) document.querySelector(`.key[data-idx="${idx}"]`).classList.add('active');
-        });
-      });
-      // Activate melody (red)
-      tracks.melody.forEach(n => {
-        const idx = noteToIdx(n.note);
-        if (idx!==null) document.querySelector(`.key[data-idx="${idx}"]`).style.background = 'var(--red)';
-      });
-    }
-
-    function parseChord(chord) {
-      // Very naive extraction of scale degrees
-      const root = chord.replace(/[m79]/g,'').replace('maj','');
-      const degree = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[root]||0;
-      return [degree, (degree+4)%12, (degree+7)%12];
-    }
-
-    function noteToIdx(noteLetter) {
-      const map = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
-      return map[noteLetter] ?? null;
-    }
-
-    // -------------------------------------------------
-    // 6️⃣ Audio engine (Tone.js)
-    // -------------------------------------------------
-    async function initSynths() {
-      // Simple synths – replace with richer voices if desired
-      state.synth.chords = new Tone.PolySynth(Tone.MembraneSynth).toDestination();
-      state.synth.melody = new Tone.Synth().toDestination();
-      state.synth.drums  = new Tone.MembraneSynth().toDestination();
-    }
-
-    async function playTracks(tracks) {
-      if (!state.isPlaying) {
-        // Ensure user interaction before playing on iOS
-        await Tone.start();
-        state.isPlaying = true;
-      }
-      // ---- Drums ----
-      state.synth.drums.triggerAttack('C2', '8n');
-      // Simple kick/snare mapping for demo
-      tracks.drums.forEach(d => {
-        const synth = state.synth.drums;
-        const note = d.instrument==='kick' ? 'C2' : 'D2';
-        synth.triggerAttackRelease(note, d.duration, '0', d.velocity);
-      });
-
-      // ---- Chords ----
-      state.synth.chords.setDestinationSolo(0);
-      tracks.chords.forEach((ch,i) => {
-        const synth = state.synth.chords;
-        const notes = chordToMidiNotes(ch);
-        notes.forEach(n => synth.triggerAttack(n, '4n'));
-        synth.releaseAll('2n');
-      });
-
-      // ---- Melody ----
-      const melodySynth = state.synth.melody;
-      tracks.melody.forEach(n => {
-        melodySynth.triggerAttack(n.note, '4n', n.velocity);
-        melodySynth.releaseAll('2n');
-      });
-    }
-
-    function chordToMidiNotes(chordName) {
-      // Very naive: just return C,E,G for major, C,Eb,G for minor
-      const base = chordName.replace(/[m79]/g,'').replace('maj','');
-      const isMinor = chordName.includes('m');
-      const notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-      const rootIdx = notes.indexOf(base);
-      const intervals = isMinor ? [0,3,7] : [0,4,7];
-      return intervals.map(i=>notes[(rootIdx+i)%12]);
-    }
-
-    // -------------------------------------------------
-    // 7️⃣ Event listeners
-    // -------------------------------------------------
-    document.getElementById('midi-input').addEventListener('change', async e=>{
+    // ======================= LISTENERS =======================
+    document.getElementById('midi-input').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      state.midiFile = file;
       const analysis = await analyzeMidi(file);
       state.analysis = analysis;
       state.bpm = analysis.bpm;
-      document.getElementById('bpm-display').textContent = `${analysis.bpm} BPM`;
-      document.getElementById('bpm-input').value = analysis.bpm;
-
-      // Show extracted info
+      document.getElementById('bpm-display').textContent = `${state.bpm} BPM`;
+      document.getElementById('bpm-input').value = state.bpm;
       document.getElementById('detected-info').classList.remove('hidden');
       document.getElementById('chord-display').textContent = `Chords: ${analysis.chords.join(', ')}`;
       document.getElementById('key-display').textContent = `Key: ${analysis.key}`;
-      document.getElementById('scale-display').textContent = `Scale: ${getScaleName(analysis.key)}`;
-
-      // Enable generation
       document.getElementById('generate-btn').disabled = false;
     });
 
-    document.getElementById('bpm-input').addEventListener('input', e=>{
-      const val = parseInt(e.target.value);
-      if (!isNaN(val) && val>=40 && val<=300) state.bpm = val;
-      document.getElementById('bpm-display').textContent = `${val} BPM`;
+    document.getElementById('bpm-input').addEventListener('input', (e) => {
+      state.bpm = parseInt(e.target.value);
+      document.getElementById('bpm-display').textContent = `${state.bpm} BPM`;
     });
 
-    document.querySelectorAll('[data-length]').forEach(btn=>{
-      btn.addEventListener('click',()=> {
-        state.chordLength = btn.dataset.length;
-        // visual toggle
-        document.querySelectorAll('[data-length]').forEach(b=>b.className='btn btn-secondary');
-        btn.className='btn btn-primary';
-      });
-    });
-
-    document.getElementById('generate-btn').addEventListener('click', async ()=>{
-      if (!state.analysis) return;
+    document.getElementById('generate-btn').addEventListener('click', () => {
       const bars = parseInt(state.chordLength);
-      const generatedChords = generateChords(state.analysis.chords, state.selectedStyle);
-      const generatedMelody = generateMelody(generatedChords, state.analysis.key, state.bpm, state.selectedStyle);
-      const generatedDrums  = generateDrums(bars, state.selectedStyle);
-
+      const generatedChords = state.analysis.chords.slice();
+      const generatedMelody = generatedChords.map(() => ({ note: 'C5', duration: '4n', velocity: 1 }));
+      const generatedDrums = Array.from({ length: bars * 4 }, (_, i) => ({
+        instrument: i % 4 === 0 ? 'kick' : i % 4 === 2 ? 'snare' : 'hihat',
+        step: i,
+        velocity: 0.7
+      }));
       state.generatedTracks = { chords: generatedChords, melody: generatedMelody, drums: generatedDrums };
+
       buildPianoRoll(state.generatedTracks);
       document.getElementById('chords-list').textContent = generatedChords.join('\n');
-
-      // Enable Play button
-      document.getElementById('play-btn').disabled = false;
-      document.getElementById('play-btn').classList.remove('btn-disabled');
-
-      // Enable Export
-      document.getElementById('export-btn').disabled = false;
     });
 
-    document.getElementById('play-btn').addEventListener('click', async ()=>{
-      if (!state.generatedTracks?.chords.length) return;
-      await initSynths();
-      await playTracks(state.generatedTracks);
+    document.getElementById('play-btn').addEventListener('click', () => {
+      if (state.generatedTracks.chords.length) {
+        playTracks(state.generatedTracks);
+      }
     });
 
-    document.getElementById('export-btn').addEventListener('click', ()=>{
-      alert('Export would generate three MIDI files:\n1. Chords\n2. Melody\n3. Drums');
-    });
-
-    document.getElementById('help-btn').addEventListener('click',()=>{
+    document.getElementById('help-btn').addEventListener('click', () => {
       document.getElementById('help-modal').classList.remove('hidden');
     });
-    document.getElementById('close-modal').addEventListener('click',()=>{
+    document.getElementById('close-modal').addEventListener('click', () => {
       document.getElementById('help-modal').classList.add('hidden');
     });
 
-    // -------------------------------------------------
-    // 8️⃣ Initialise UI
-    // -------------------------------------------------
-    renderStyleGrid();
+    // ======================= VISUAL =======================
+    function buildPianoRoll(tracks) {
+      const container = document.getElementById('piano-roll');
+      container.innerHTML = '';
+      const keys = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+      for (let i = 21; i <= 108; i++) {
+        const whiteX = i % 12;
+        const blackIdx = [1, 3, 6, 8, 10].indexOf(whiteX);
+        const octave = Math.floor(i / 12) - 1;
+        const key = document.createElement('div');
+        key.className = `key ${blackIdx >= 0 ? 'key-black' : 'key-white'}`;
+        key.dataset.idx = i;
+        if (blackIdx < 0) key.innerHTML = `<span class="key-label font-[9px] text-[var(--muted)]">${keys[whiteX]}</span>`;
+        container.appendChild(key);
+      }
+
+      tracks.chords.forEach(ch => {
+        chordToMidiNotes(ch).forEach(p => {
+          const el = document.querySelector(`.key[data-idx="${p + 36}"]`);
+          if (el) el.classList.add('active');
+        });
+      });
+    }
+
+    // ======================= INIT =======================
+    // Disable buttons initially
     document.getElementById('generate-btn').disabled = true;
     document.getElementById('export-btn').disabled = true;
     document.getElementById('play-btn').disabled = true;
@@ -476,4 +345,3 @@ Below is a **complete, self‑contained HTML app** that
   </script>
 </body>
 </html>
-```
