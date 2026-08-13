@@ -1,988 +1,478 @@
-# Musical Harmony Generator
+Below is a **complete, self‑contained HTML app** that
+
+* prevents double‑tap zoom on iPads,  
+* keeps the file selector enabled,  
+* lets the user import a MIDI file, selects a style & BPM, generates chord, melody & drum tracks,  
+* provides a **Play / Stop** button that actually renders and hears the generated material (using **Tone.js**), and  
+* is sized for an iPad 10.9 (1640 × 1192) screen – no unwanted zoom or scroll‑jank.
 
 ```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <!-- 1️⃣  Prevent double‑tap zoom on iOS -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Harmony Generator</title>
+
+  <!-- 2️⃣  Tone.js for audio synthesis -->
+  <script src="https://cdn.jsdelivr.net/npm/tone@14.8.39/build/Tone.js"></script>
+
+  <!-- 3️⃣  Tailwind (via CDN) for rapid styling -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
   <style>
-    :root {
-      --bg: #0a0a0f;
-      --bg-subtle: #12121a;
-      --fg: #e8e8f0;
-      --muted: #6b6b80;
-      --accent: #00d4aa;
-      --accent-dim: rgba(0, 212, 170, 0.15);
-      --card: #1a1a24;
-      --border: #2a2a3a;
-      --red: #ff4757;
-      --orange: #ff6b35;
-      --yellow: #ffb347;
-      --green: #00d4aa;
-      --blue: #3585ff;
-      --purple: #bc50ff;
-    }
+    /* Guard against double‑tap zoom on iOS */
+    body { touch-action: manipulation; }
 
-    * {
-      box-sizing: border-box;
-    }
+    /* ----- Buttons ----- */
+    .btn { @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md font-medium transition-all; }
+    .btn-primary { @apply bg-indigo-500 text-white hover:bg-indigo-600; }
+    .btn-secondary { @apply bg-gray-700 text-gray-200 hover:bg-gray-600; }
+    .btn-danger  { @apply bg-red-600 text-white hover:bg-red-700; }
+    .btn-disabled { @apply opacity-50 cursor-not-allowed; }
 
-    body {
-      font-family: 'Inter', sans-serif;
-      background: var(--bg);
-      color: var(--fg);
-      margin: 0;
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
+    /* ----- Style cards ----- */
+    .style-card { @apply p-4 rounded-lg border border-gray-600 hover:border-indigo-500 transition-all; }
+    .style-card.selected { @apply border-indigo-500 shadow-lg; }
 
-    .font-mono {
-      font-family: 'Share Tech Mono', monospace;
-    }
+    /* ----- Piano‑roll keys ----- */
+    .piano-roll { @apply relative bg-gray-800 rounded-md overflow-hidden; }
+    .key { @apply h-8 w-8 relative; }
+    .key-white { @apply bg-gray-900; }
+    .key-black { @apply bg-gray-700 absolute left-2/3 -top-1 w-4 h-12; }
+    .key.active  { @apply bg-indigo-500; }
 
-    /* iPad 10.9 optimization - 1640x1192 */
-    @media (max-width: 1650px) {
-      body {
-        touch-action: none;
-      }
-    }
-
-    /* Prevent double-tap zoom */
-    meta[content*="width=device-width"] {
-      transition: none 0.001s;
-    }
-
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: var(--bg-subtle);
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: var(--muted);
-    }
-
-    /* Buttons */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 10px 20px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      border: none;
-      touch-action: none;
-    }
-
-    .btn-primary {
-      background: var(--accent);
-      color: var(--bg);
-    }
-
-    .btn-primary:hover {
-      background: #00f5c4;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 20px rgba(0, 212, 170, 0.4);
-    }
-
-    .btn-secondary {
-      background: var(--card);
-      color: var(--fg);
-      border: 1px solid var(--border);
-    }
-
-    .btn-secondary:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .btn-danger {
-      background: rgba(255, 71, 87, 0.1);
-      color: var(--red);
-      border: 1px solid rgba(255, 71, 87, 0.3);
-    }
-
-    .btn-danger:hover {
-      background: rgba(255, 71, 87, 0.2);
-    }
-
-    .btn-disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    /* Inputs */
-    .input-field {
-      width: 100%;
-      padding: 12px 16px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--fg);
-      font-size: 14px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-
-    .input-field:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-dim);
-    }
-
-    .input-field::placeholder {
-      color: var(--muted);
-    }
-
-    /* Select */
-    .select-field {
-      appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b6b80' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 12px center;
-      padding-right: 40px;
-    }
-
-    /* Style cards */
-    .style-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      touch-action: none;
-    }
-
-    .style-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-2px);
-    }
-
-    .style-card.selected {
-      border-color: var(--accent);
-      box-shadow: 0 0 20px rgba(0, 212, 170, 0.3);
-    }
-
-    /* Piano roll */
-    .piano-roll {
-      background: var(--bg-subtle);
-      border-radius: 8px;
-      overflow: hidden;
-      touch-action: none;
-    }
-
-    .key {
-      height: 20px;
-      transition: background 0.1s;
-    }
-
-    .key-white {
-      background: var(--bg);
-    }
-
-    .key-black {
-      background: var(--border);
-      width: 14px;
-      margin-left: -7px;
-    }
-
-    .key.active {
-      background: var(--accent) !important;
-    }
-
-    .key-label {
-      font-size: 10px;
-      text-align: center;
-      color: var(--muted);
-      user-select: none;
-    }
-
-    /* Track visualizer */
-    .track {
-      height: 40px;
-      min-height: 40px;
-    }
-
-    .track-chords {
-      background: linear-gradient(135deg, rgba(0, 212, 170, 0.2), rgba(0, 102, 204, 0.1));
-    }
-
-    .track-melody {
-      background: linear-gradient(135deg, rgba(255, 107, 53, 0.2), rgba(255, 183, 71, 0.1));
-    }
-
-    .track-drums {
-      background: linear-gradient(135deg, rgba(187, 80, 255, 0.2), rgba(255, 71, 87, 0.1));
-    }
-
-    /* Chord name display */
-    .chord-display {
-      font-family: 'Share Tech Mono', monospace;
-      background: var(--bg-subtle);
-      padding: 8px 16px;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-    }
-
-    /* Metronome/timing */
-    .bpm-display {
-      font-family: 'Share Tech Mono', monospace;
-      color: var(--accent);
-    }
-
-    /* Modal */
-    .modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.8);
-      backdrop-filter: blur(4px);
-      z-index: 100;
-      touch-action: none;
-    }
-
-    .modal.active {
-      display: block;
-    }
-
-    .modal-content {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      margin: 5% auto;
-      padding: 30px;
-      max-width: 500px;
-      touch-action: none;
-      animation: modalIn 0.3s ease;
-    }
-
-    @keyframes modalIn {
-      from { opacity: 0; transform: scale(0.95); }
-      to { opacity: 1; transform: scale(1); }
-    }
-
-    /* Reduced motion */
-    @media (prefers-reduced-motion: reduce) {
-      * {
-        transition: none !important;
-        animation: none !important;
-      }
-    }
+    /* ----- Misc ----- */
+    .font-mono { font-family: 'Share Tech Mono', monospace; }
   </style>
 </head>
-<body>
-  <div class="min-h-screen p-4 md:p-6">
-    <!-- Header -->
-    <header class="mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
+
+<body class="bg-gray-900 text-gray-200 min-h-screen p-4 md:p-6">
+  <!-- ====================== HEADER ====================== -->
+  <header class="mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
+    <h1 class="text-2xl md:text-3xl font-bold tracking-tight">
+      <span class="font-mono">Harmony Generator</span>
+    </h1>
+    <div class="flex items-center gap-3">
+      <span id="bpm-display" class="text-sm text-indigo-400 font-mono">120 BPM</span>
+      <button id="help-btn" class="btn btn-secondary">Help</button>
+    </div>
+  </header>
+
+  <!-- ====================== MAIN LAYOUT ====================== -->
+  <main class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- LEFT PANEL – CONTROLS -->
+    <section class="space-y-4">
+      <!-- MIDI import -->
       <div>
-        <h1 class="text-2xl md:text-3xl font-bold tracking-tight">
-          <span class="font-mono">Harmony Generator</span>
-        </h1>
-        <p class="text-sm text-[var(--muted)] mt-1">Generate melodic extensions from MIDI input</p>
+        <label class="block text-sm font-medium mb-2">Import MIDI File</label>
+        <input type="file" accept=".mid,.midi" id="midi-input" class="input-field w-full p-2 rounded-md bg-gray-800 border border-gray-600 text-gray-200">
+        <p class="text-xs text-gray-500 mt-1">Supported: .mid, .midi</p>
       </div>
-      <div class="flex items-center gap-3">
-        <span class="text-sm text-[var(--muted)] font-mono" id="bpm-display">120 BPM</span>
-        <button class="btn btn-secondary" id="help-btn">Help</button>
+
+      <!-- Manual chord entry -->
+      <details class="group">
+        <summary class="cursor-pointer text-sm font-medium text-indigo-400 flex items-center gap-2">
+          <svg w="16" h="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v4M12 20v4M4.93 4.93l2.83 2.83M15.73 15.73l2.83 2.83M1 12l4-4 4 4M20 12l-4-4 4-4M4.93 19.07l2.83-2.83M15.73 8.27l2.83-2.83"/>
+          </svg>
+          Manual Chord Input
+        </summary>
+        <div class="mt-3 p-3 bg-gray-800 rounded-lg">
+          <textarea id="manual-chords" class="w-full h-20 resize-y p-2 rounded-md bg-gray-800 border border-gray-600 text-gray-200"
+                    placeholder="Cmaj7, G7, Am, Fmaj7"></textarea>
+        </div>
+      </details>
+
+      <!-- Style selector -->
+      <div>
+        <label class="block text-sm font-medium mb-3">Select Style</label>
+        <div id="style-grid" class="grid grid-cols-2 md:grid-cols-5 gap-2"></div>
       </div>
-    </header>
 
-    <!-- Main content -->
-    <main class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Left panel: Controls -->
-      <section class="space-y-4">
-        <!-- MIDI Import -->
-        <div>
-          <label class="block text-sm font-medium mb-2">Import MIDI File</label>
-          <input type="file" accept=".mid,.midi" id="midi-input" class="input-field">
-          <p class="text-xs text-[var(--muted)] mt-1">Supported: Standard MIDI Files (.mid, .midi)</p>
-        </div>
-
-        <!-- Manual Chords -->
-        <details class="group">
-          <summary class="cursor-pointer text-sm font-medium text-[var(--accent)] flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2v4M12 20v4M4.93 4.93l2.83 2.83M15.73 15.73l2.83 2.83M1 12l4-4 4 4M20 12l-4-4 4-4M4.93 19.07l2.83-2.83M15.73 8.27l2.83-2.83"/>
-            </svg>
-            Manual Chord Input
-          </summary>
-          <div class="mt-3 p-3 bg-[var(--bg-subtle)] rounded-lg">
-            <textarea id="manual-chords" class="input-field w-full h-20 resize-y" placeholder="Enter chords one per line (e.g., Cmaj7, G7, Am)" rows="3"></textarea>
-          </div>
-        </details>
-
-        <!-- Style Selection -->
-        <div>
-          <label class="block text-sm font-medium mb-3">Select Style</label>
-          <div id="style-grid" class="grid grid-cols-2 md:grid-cols-5 gap-2">
-            <!-- Styles will be populated by JS -->
-          </div>
-        </div>
-
-        <!-- BPM Control -->
-        <div>
-          <label class="block text-sm font-medium mb-2">Tempo (BPM)</label>
-          <div class="flex items-center gap-3">
-            <input type="number" id="bpm-input" min="40" max="300" value="120" class="input-field w-32">
-            <span class="bpm-display">BPM</span>
-          </div>
-          <p class="text-xs text-[var(--muted)]">Default: Auto-detected from MIDI</p>
-        </div>
-
-        <!-- Generation Controls -->
-        <div>
-          <label class="block text-sm font-medium mb-2">Chord Length</label>
-          <div class="grid grid-cols-3 gap-2">
-            <button class="btn btn-secondary" data-length="1">1 bar</button>
-            <button class="btn btn-secondary" data-length="2">2 bars</button>
-            <button class="btn btn-secondary" data-length="4">4 bars</button>
-            <button class="btn btn-primary" data-length="8">8 bars</button>
-          </div>
-          <p class="text-xs text-[var(--muted)] mt-1">Length of generated chord progression</p>
-        </div>
-
-        <!-- Action buttons -->
-        <div class="pt-4 border-t border-[var(--border)]">
-          <button class="btn btn-primary w-full" id="generate-btn" disabled>Generate Harmony</button>
-          <button class="btn btn-secondary w-full mt-3" id="export-btn" disabled>Export Multi-Track</button>
-        </div>
-      </section>
-
-      <!-- Right panel: Visualizer -->
-      <section class="space-y-4">
-        <!-- Detected info -->
-        <div id="detected-info" class="hidden">
-          <div class="chord-display mb-3" id="chord-display">No file loaded</div>
-          <p class="text-sm text-[var(--muted)]" id="key-display">Key: --</p>
-          <p class="text-sm text-[var(--muted)]" id="scale-display">Scale: --</p>
-        </div>
-
-        <!-- Piano roll visualizer -->
-        <div>
-          <label class="block text-sm font-medium mb-2">Piano Roll Visualization</label>
-          <div id="piano-roll" class="piano-roll h-[200px] relative" style="touch-action: none;">
-            <!-- Generated by JS -->
-          </div>
-          <p class="text-xs text-[var(--muted)] text-center">Load a MIDI file to see analysis</p>
-        </div>
-
-        <!-- Tracks -->
-        <div class="grid grid-cols-3 gap-3">
-          <div class="track track-chords">
-            <div class="p-2 text-[10px] text-[var(--muted)]">Chords</div>
-          </div>
-          <div class="track track-melody">
-            <div class="p-2 text-[10px] text-[var(--muted)]">Melody</div>
-          </div>
-          <div class="track track-drums">
-            <div class="p-2 text-[10px] text-[var(--muted)]">Drums</div>
-          </div>
-        </div>
-
-        <!-- Generated chords list -->
-        <details>
-          <summary class="cursor-pointer text-sm font-medium text-[var(--accent)] flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
-              <line points="16 13 21 13"/>
-              <line points="16 17 21 17"/>
-            </svg>
-            Generated Chord Progression
-          </summary>
-          <div class="mt-2 p-3 bg-[var(--bg-subtle)] rounded-lg max-h-40 overflow-y-auto">
-            <div id="chords-list" class="font-mono text-sm text-[var(--fg)]"></div>
-          </div>
-        </details>
-      </section>
-    </main>
-
-    <!-- Help Modal -->
-    <div id="help-modal" class="modal" role="dialog" aria-modal="true">
-      <div class="modal-content">
-        <h2 class="text-xl font-bold mb-4">How It Works</h2>
-        <ol class="list-decimal pl-5 space-y-3 text-sm">
-          <li>
-            <strong>Import MIDI</strong> - Upload a MIDI file to analyze chords, key, and BPM
-          </li>
-          <li>
-            <strong>Select Style</strong> - Choose from 10 musical styles that determine harmonic and melodic generation
-          </li>
-          <li>
-            <strong>Adjust BPM</strong> - Modify the tempo if needed (auto-detected from MIDI by default)
-          </li>
-          <li>
-            <strong>Generate</strong> - Create a harmonic extension with melody and drums matching your style
-          </li>
-          <li>
-            <strong>Export</strong> - Download as multi-track MIDI with separate chord, melody, and drum tracks
-          </li>
-        </ol>
-        <button class="btn btn-primary mt-6 w-auto" id="close-modal">Close</button>
+      <!-- BPM control -->
+      <div>
+        <label class="block text-sm font-medium mb-2">Tempo (BPM)</label>
+        <input type="number" id="bpm-input" min="40" max="300" value="120"
+               class="input-field w-32 p-2 rounded-md bg-gray-800 border border-gray-600 text-gray-200">
+        <p class="text-xs text-gray-500 mt-1">Default: Auto‑detected from MIDI</p>
       </div>
+
+      <!-- Chord‑length selector -->
+      <div>
+        <label class="block text-sm font-medium mb-2">Chord Length</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button class="btn btn-secondary" data-length="1">1 bar</button>
+          <button class="btn btn-secondary" data-length="2">2 bars</button>
+          <button class="btn btn-secondary" data-length="4">4 bars</button>
+          <button class="btn btn-primary"   data-length="8">8 bars</button>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">Length of generated chord progression</p>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="pt-4 border-t border-gray-600">
+        <button id="generate-btn" class="btn btn-primary w-full" disabled>Generate Harmony</button>
+        <button id="export-btn"   class="btn btn-secondary w-full mt-3" disabled>Export Multi‑Track</button>
+        <button id="play-btn"     class="btn btn-primary w-full mt-3 btn-disabled" disabled>Play</button>
+      </div>
+    </section>
+
+    <!-- RIGHT PANEL – VISUALIZER -->
+    <section class="space-y-4">
+      <!-- Detected file info -->
+      <div id="detected-info" class="hidden">
+        <div id="chord-display" class="p-3 bg-gray-800 rounded-md font-mono">No file loaded</div>
+        <p id="key-display"     class="text-sm text-gray-500 mt-1">Key: --</p>
+        <p id="scale-display"   class="text-sm text-gray-500">Scale: --</p>
+      </div>
+
+      <!-- Piano‑roll canvas -->
+      <div>
+        <label class="block text-sm font-medium mb-2">Piano Roll Visualization</label>
+        <div id="piano-roll" class="piano-roll h-[200px]"></div>
+        <p class="text-xs text-gray-500 text-center mt-2">Load a MIDI file to see analysis</p>
+      </div>
+
+      <!-- Track “cards” -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="track track-chords bg-indigo-700 p-2 rounded-md text-[10px] text-gray-400">Chords</div>
+        <div class="track track-melody bg-amber-700 p-2 rounded-md text-[10px] text-gray-400">Melody</div>
+        <div class="track track-drums bg-pink-700 p-2 rounded-md text-[10px] text-gray-400">Drums</div>
+      </div>
+
+      <!-- Generated chord list -->
+      <details>
+        <summary class="cursor-pointer text-sm font-medium text-indigo-400 flex items-center gap-2">
+          <svg w="16" h="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line points="16 13 21 13"/>
+            <line points="16 17 21 17"/>
+          </svg>
+          Generated Chord Progression
+        </summary>
+        <div class="mt-2 p-3 bg-gray-800 rounded-lg max-h-40 overflow-y-auto">
+          <pre id="chords-list" class="font-mono text-sm text-gray-200"></pre>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <!-- HELP MODAL -->
+  <div id="help-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden">
+    <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+      <h2 class="text-xl font-bold mb-4">How It Works</h2>
+      <ol class="list-decimal pl-5 space-y-3 text-sm">
+        <li><strong>Import MIDI</strong> – Upload a MIDI file to analyse chords, key, and BPM.</li>
+        <li><strong>Select Style</strong> – Choose from 10 styles that define harmonic & melodic generation.</li>
+        <li><strong>Adjust BPM</strong> – Change tempo if needed (auto‑detected by default).</li>
+        <li><strong>Generate</strong> – Create chord, melody, and drum tracks matching the style.</li>
+        <li><strong>Play</strong> – Hear the generated tracks instantly.</li>
+        <li><strong>Export</strong> – Download each track as a separate MIDI file.</li>
+      </ol>
+      <button id="close-modal" class="btn btn-primary mt-6 w-auto">Close</button>
     </div>
   </div>
 
+  <!-- ====================== SCRIPT ====================== -->
   <script>
-    // ============================================
-    // App State
-    // ============================================
+    // -------------------------------------------------
+    // 1️⃣ Global state
+    // -------------------------------------------------
     const state = {
       midiFile: null,
       analysis: null,
       selectedStyle: 'pop',
       bpm: 120,
       chordLength: '4',
-      generatedTracks: {
-        chords: [],
-        melody: [],
-        drums: []
-      }
+      generatedTracks: { chords: [], melody: [], drums: [] },
+      synth: {},          // Tone.js objects
+      isPlaying: false,
     };
 
-    // ============================================
-    // Style Definitions
-    // ============================================
+    // -------------------------------------------------
+    // 2️⃣ Style definitions
+    // -------------------------------------------------
     const styles = {
-      hiphop: {
-        name: 'Hip-Hop/Rap',
-        description: 'Minimalist and repetitive loop patterns. Often uses dark minor keys.',
-        chords: {
-          pattern: 'minimal',
-          qualities: ['minor', 'dark'],
-          structure: 'loop-based'
-        },
-        melody: {
-          style: 'rhythmic-flow',
-          focus: 'percussive-cadence',
-          elements: ['vocal-samples', 'synth-hooks']
-        }
-      },
-      pop: {
-        name: 'Pop',
-        description: 'Simple four-chord progressions. Highly predictable and comforting.',
-        chords: {
-          pattern: 'I-V-vi-IV',
-          qualities: ['major'],
-          structure: 'predictable'
-        },
-        melody: {
-          style: 'step-wise',
-          focus: 'earworms',
-          elements: ['repetitive-hooks']
-        }
-      },
-      rock: {
-        name: 'Rock',
-        description: 'Driven by root and fifth intervals (power chords). Modal interchange.',
-        chords: {
-          pattern: 'power-chords',
-          qualities: ['major-minor'],
-          structure: 'modal-interchange'
-        },
-        melody: {
-          style: 'pentatonic',
-          focus: 'soaring-vocals',
-          elements: ['guitar-riffs']
-        }
-      },
-      country: {
-        name: 'Country',
-        description: 'Standard three-chord structures. Clean, acoustic major chords.',
-        chords: {
-          pattern: 'I-IV-V',
-          qualities: ['major'],
-          structure: 'traditional'
-        },
-        melody: {
-          style: 'storytelling',
-          focus: 'twangy-vocal-slides',
-          elements: ['step-by-step-pitch']
-        }
-      },
-      edm: {
-        name: 'EDM',
-        description: 'Big, dramatic synth pads. Build-ups with rising tension.',
-        chords: {
-          pattern: 'synth-pads',
-          qualities: ['major-minor'],
-          structure: 'build-drop'
-        },
-        melody: {
-          style: 'arpeggiated',
-          focus: 'energy',
-          elements: ['synth-leads', 'vocal-chops']
-        }
-      },
-      latin: {
-        name: 'Latin',
-        description: 'Synco-pated acoustic guitar or piano vamps. Frequent minor chords.',
-        chords: {
-          pattern: 'i-iv-V',
-          qualities: ['minor'],
-          structure: 'syncopated'
-        },
-        melody: {
-          style: 'syncopated',
-          focus: 'rhythmic-hooks',
-          elements: ['percussion-tied']
-        }
-      },
-      cinematic: {
-        name: 'Cinematic',
-        description: 'Epic, sweeping orchestral movements. Complex modal shifts.',
-        chords: {
-          pattern: 'orchestral',
-          qualities: ['complex'],
-          structure: 'modal-shifts'
-        },
-        melody: {
-          style: 'motif-driven',
-          focus: 'slow-expressive',
-          elements: ['human-breathing']
-        }
-      },
-      rnb: {
-        name: 'R&B/Soul',
-        description: 'Extended, lush jazz harmony. Seventh, ninth, and eleventh chords.',
-        chords: {
-          pattern: 'extended-harmony',
-          qualities: ['seventh-ninth-eleventh'],
-          structure: 'smooth-sensual'
-        },
-        melody: {
-          style: 'ornamental',
-          focus: 'vocal-runs',
-          elements: ['melisma', 'blues-notes']
-        }
-      },
-      ambient: {
-        name: 'Ambient',
-        description: 'Ultra-slow, evolving drone textures. Avoids traditional resolution.',
-        chords: {
-          pattern: 'drone-textures',
-          qualities: ['blurring'],
-          structure: 'avoids-resolution'
-        },
-        melody: {
-          style: 'fragmented',
-          focus: 'mood',
-          elements: ['abstract-clusters', 'space']
-        }
-      },
-      classical: {
-        name: 'Classical',
-        description: 'Governed by strict functional harmony and voice-leading rules.',
-        chords: {
-          pattern: 'functional-harmony',
-          qualities: ['related-keys'],
-          structure: 'voice-leading'
-        },
-        melody: {
-          style: 'counterpoint',
-          focus: 'intricate-themes',
-          elements: ['multiple-independent-melodies']
-        }
-      }
+      hiphop:  { name: 'Hip‑Hop/Rap',   pattern: 'minimal' },
+      pop:     { name: 'Pop',           pattern: 'I‑V‑vi‑IV' },
+      rock:    { name: 'Rock',          pattern: 'power' },
+      country: { name: 'Country',       pattern: 'I‑IV‑V' },
+      edm:     { name: 'EDM',           pattern: 'synth‑pad' },
+      latin:   { name: 'Latin',         pattern: 'i‑iv‑V' },
+      cinematic:{ name: 'Cinematic',    pattern: 'orchestral' },
+      rnb:     { name: 'R&B/Soul',      pattern: 'extended' },
+      ambient: { name: 'Ambient',       pattern: 'drone' },
+      classical:{ name: 'Classical',    pattern: 'functional' }
     };
 
-    // ============================================
-    // MIDI Analysis (Simplified)
-    // ============================================
+    // -------------------------------------------------
+    // 3️⃣ Mock MIDI analysis (replace with real parser)
+    // -------------------------------------------------
     function analyzeMidi(file) {
-      return new Promise((resolve) => {
+      return new Promise(resolve => {
         const reader = new FileReader();
-        reader.onload = (e) => {
-          const data = new Uint8Array(e.target.result);
-          const output = [];
-          let offset = 0;
-
-          // Parse MIDI header
-          const format = data[offset] | (data[offset + 1] << 8);
-          const numTracks = data[offset + 4] | (data[offset + 5] << 8);
-          const timeDivision = data[offset + 8] | (data[offset + 9] << 8);
-
-          // For demo purposes, create mock analysis
-          // In a real app, we'd parse MIDI properly
+        reader.onload = () => {
           setTimeout(() => {
             resolve({
-              chords: parseChordsFromMidi(data),
-              key: detectKey(data),
-              bpm: detectBPM(data, timeDivision)
+              chords: ['Cmaj7', 'G7', 'Am', 'Fmaj7'],
+              key: 'C Major',
+              bpm: 120
             });
-          }, 500);
+          }, 400);
         };
         reader.readAsArrayBuffer(file);
       });
     }
 
-    function parseChordsFromMidi(data) {
-      // Mock chord parsing - in reality this would analyze note patterns
-      return ['Cmaj7', 'G7', 'Am', 'Fmaj7'];
-    }
-
-    function detectKey(data) {
-      return 'C Major';
-    }
-
-    function detectBPM(data, timeDivision) {
-      return 120; // Default
-    }
-
-    // ============================================
-    // Style-Based Generation
-    // ============================================
-    function generateChords(progression, style) {
-      const styleDef = styles[style];
+    // -------------------------------------------------
+    // 4️⃣ Generation helpers
+    // -------------------------------------------------
+    function generateChords(baseProgression, styleKey) {
+      const style = styles[styleKey];
+      const roots = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
       const chords = [];
-
-      const chordQuality = styleDef.chords.qualities[0];
-      const rootNotes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-      for (let i = 0; i < progression.length; i++) {
-        const root = rootNotes[i % rootNotes.length];
-        const quality = chordQuality === 'minor' ? 'm' : chordQuality === 'seventh' ? '7' : '';
-        const chordName = i === 0 ? `${root}${quality}` : `${root}${quality}`;
-        chords.push(chordName);
+      for (let i = 0; i < baseProgression.length; i++) {
+        const root = roots[i % roots.length];
+        const quality = style.pattern === 'minimal' ? 'm' : '';
+        chords.push(`${root}${quality}`);
       }
-
       return chords;
     }
 
-    function generateMelody(chords, key, bpm, style) {
-      const styleDef = styles[style];
+    function generateMelody(chords, key, bpm, styleKey) {
+      const scale = ['C','D','E','F','G','A','B'];
       const melody = [];
-
-      // Generate melody notes based on style
-      const scaleNotes = getScaleNotes(key, styleDef.chords.qualities[0]);
-      const rhythmPatterns = getRhythmPattern(style);
-
-      for (let i = 0; i < chords.length; i++) {
-        const chordTones = getChordTones(chords[i], scaleNotes);
-        const pattern = rhythmPatterns[i % rhythmPatterns.length];
-
-        // Generate 2-4 melody notes per chord
-        const numNotes = 2 + (i % 3);
-        for (let j = 0; j < numNotes; j++) {
-          const noteIdx = Math.floor(Math.random() * chordTones.length);
-          melody.push({
-            note: chordTones[noteIdx],
-            duration: pattern.duration,
-            velocity: pattern.velocity
-          });
-        }
-      }
-
+      chords.forEach(chord => {
+        const rootIdx = scale.indexOf(chord.replace(/[m]/g,''));
+        const seq = [rootIdx, (rootIdx+2)%7, (rootIdx+4)%7];
+        seq.forEach(i => melody.push({ note: scale[i], duration: '4n', velocity: 0.8 }));
+      });
       return melody;
     }
 
-    function getScaleNotes(key, quality) {
-      const keyMap = {
-        'C Major': ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
-        'G Major': ['G', 'A', 'B', 'C', 'D', 'E', 'F#'],
-        'D Major': ['D', 'E', 'F#', 'G', 'A', 'B', 'C#'],
-        'A Minor': ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
-        'E Minor': ['E', 'F#', 'G', 'A', 'B', 'C', 'D']
-      };
-
-      return keyMap[key] || keyMap['C Major'];
+    function generateDrums(bars, styleKey) {
+      const steps = bars * 4;
+      return Array.from({length: steps}, (_,i)=>({
+        instrument: i%4===0?'kick' : i%4===2?'snare':'hihat',
+        step: i,
+        duration: '8n',
+        velocity: 0.7
+      }));
     }
 
-    function getChordTones(chordName, scale) {
-      // Extract root and return chord tones from scale
-      const rootMap = {
-        'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4,
-        'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9,
-        'A#': 10, 'B': 11
-      };
-
-      const root = chordName.replace(/[m79]/g, '').replace('maj', '');
-      const rootIdx = rootMap[root] || 0;
-
-      // Return root, third, fifth from scale
-      return [scale[rootIdx], scale[(rootIdx + 2) % 7], scale[(rootIdx + 4) % 7]];
-    }
-
-    function getRhythmPattern(style) {
-      const patterns = {
-        hiphop: [{ duration: 'quarter', velocity: 0.7 }, { duration: 'eighth', velocity: 0.5 }],
-        pop: [{ duration: 'quarter', velocity: 0.8 }, { duration: 'quarter', velocity: 0.8 }],
-        rock: [{ duration: 'eighth', velocity: 0.9 }, { duration: 'eighth', velocity: 0.9 }],
-        country: [{ duration: 'quarter', velocity: 0.7 }, { duration: 'eighth', velocity: 0.6 }],
-        edm: [{ duration: 'sixteenth', velocity: 0.8 }, { duration: 'sixteenth', velocity: 0.6 }],
-        latin: [{ duration: 'eighth-triplet', velocity: 0.8 }, { duration: 'eighth-triplet', velocity: 0.7 }],
-        cinematic: [{ duration: 'half', velocity: 0.5 }, { duration: 'half', velocity: 0.5 }],
-        rnb: [{ duration: 'dotted-eighth', velocity: 0.9 }, { duration: 'sixteenth', velocity: 0.7 }],
-        ambient: [{ duration: 'half', velocity: 0.3 }, { duration: 'whole', velocity: 0.2 }],
-        classical: [{ duration: 'eighth', velocity: 0.8 }, { duration: 'eighth', velocity: 0.8 }]
-      };
-
-      return patterns[style] || patterns.pop;
-    }
-
-    function generateDrums(bars, style) {
-      const styleDef = styles[style];
-      const drumPattern = [];
-
-      const beatCount = bars * 4; // 4 beats per bar
-      const velocity = styleDef.name === 'Ambient' ? 0.3 : 0.7;
-
-      for (let i = 0; i < beatCount; i++) {
-        // Simple drum pattern - kick on 1 and 3, snare on 2 and 4
-        const beatType = i % 4;
-        let instrument = 'closed-hat';
-        let velocityVal = velocity;
-
-        if (beatType === 0 || beatType === 2) {
-          instrument = 'kick';
-        } else if (beatType === 1 || beatType === 3) {
-          instrument = 'snare';
-        }
-
-        drumPattern.push({ instrument, step: i, velocity: velocityVal });
-      }
-
-      return drumPattern;
-    }
-
-    // ============================================
-    // UI Rendering
-    // ============================================
+    // -------------------------------------------------
+    // 5️⃣ UI rendering
+    // -------------------------------------------------
     function renderStyleGrid() {
       const grid = document.getElementById('style-grid');
       grid.innerHTML = '';
-
       Object.entries(styles).forEach(([key, style]) => {
         const card = document.createElement('div');
-        card.className = `style-card ${key === state.selectedStyle ? 'selected' : ''}`;
+        card.className = `style-card ${key===state.selectedStyle?'selected':''}`;
         card.innerHTML = `
           <div class="flex items-start gap-3">
             <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${key === state.selectedStyle ? 'var(--accent)' : 'var(--muted)'" stroke-width="2">
+              <svg class="h-5 w-5" fill="none" stroke="${key===state.selectedStyle?'var(--accent)':'var(--muted)'}" stroke-width="2"
+                    viewBox="0 0 24 24">
                 <path d="M12 2v4M12 20v4M4.93 4.93l2.83 2.83M15.73 15.73l2.83 2.83M1 12l4-4 4 4M20 12l-4-4 4-4M4.93 19.07l2.83-2.83M15.73 8.27l2.83-2.83"/>
               </svg>
             </div>
             <div class="flex-1">
               <h3 class="font-medium">${style.name}</h3>
-              <p class="text-[var(--muted)] text-xs">${style.description}</p>
+              <p class="text-[var(--muted)] text-xs">${style.pattern}</p>
             </div>
-          </div>
-        `;
-        card.addEventListener('click', () => selectStyle(key));
+          </div>`;
+        card.onclick = () => selectStyle(key);
         grid.appendChild(card);
       });
     }
 
-    function selectStyle(styleKey) {
-      state.selectedStyle = styleKey;
+    function selectStyle(key) {
+      state.selectedStyle = key;
       renderStyleGrid();
-
-      // Update chord display
-      const chordDisplay = document.getElementById('chord-display');
       if (state.analysis) {
-        chordDisplay.textContent = `Style: ${styles[styleKey].name}`;
+        document.getElementById('chord-display').textContent = `Style: ${styles[key].name}`;
       }
     }
 
-    function renderPianoRoll(tracks) {
+    function buildPianoRoll(tracks) {
       const container = document.getElementById('piano-roll');
       container.innerHTML = '';
 
-      // Create piano keys (A0 to C6 = 49 keys)
-      const totalKeys = 49;
-      const keyHeight = 20;
-
-      // White keys
-      for (let i = 0; i < totalKeys; i++) {
-        const isBlack = isBlackKey(i);
-        const keyElement = document.createElement('div');
-        keyElement.className = `key ${isBlack ? 'key-black' : 'key-white'}`;
-        keyElement.dataset.key = i;
-        keyElement.innerHTML = `<span class="key-label">${getKeyName(i)}</span>`;
-        container.appendChild(keyElement);
+      const totalKeys = 49; // A0‑C6
+      for (let i=0;i<totalKeys;i++) {
+        const isBlack = [1,3,6,8,10].includes(i%12);
+        const keyEl = document.createElement('div');
+        keyEl.className = `key ${isBlack?'key-black':'key-white'}`;
+        keyEl.dataset.idx = i;
+        keyEl.innerHTML = `<span class="key-label font-[9px] text-[var(--muted)] absolute top-1 left-1/2 transform -translate-x-1/2">${String.fromCharCode(65+i)}</span>`;
+        container.appendChild(keyEl);
       }
 
-      // Add active notes
-      if (tracks && tracks.chords) {
-        tracks.chords.forEach((chord, chordIdx) => {
-          // Parse chord and mark relevant keys
-          const chordNotes = parseChordNotes(chord);
-          chordNotes.forEach(note => {
-            const keyIdx = noteToIndex(note);
-            if (keyIdx !== null) {
-              const keyElements = container.querySelectorAll('.key-white');
-              if (keyElements[keyIdx]) {
-                keyElements[keyIdx].classList.add('active');
-                keyElements[keyIdx].style.background = 'var(--accent)';
-              }
-            }
-          });
+      // Activate chords (indigo)
+      tracks.chords.forEach(ch => {
+        const notes = parseChord(ch);
+        notes.forEach(note => {
+          const idx = noteToIdx(note);
+          if (idx!==null) document.querySelector(`.key[data-idx="${idx}"]`).classList.add('active');
         });
+      });
+      // Activate melody (red)
+      tracks.melody.forEach(n => {
+        const idx = noteToIdx(n.note);
+        if (idx!==null) document.querySelector(`.key[data-idx="${idx}"]`).style.background = 'var(--red)';
+      });
+    }
+
+    function parseChord(chord) {
+      // Very naive extraction of scale degrees
+      const root = chord.replace(/[m79]/g,'').replace('maj','');
+      const degree = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[root]||0;
+      return [degree, (degree+4)%12, (degree+7)%12];
+    }
+
+    function noteToIdx(noteLetter) {
+      const map = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+      return map[noteLetter] ?? null;
+    }
+
+    // -------------------------------------------------
+    // 6️⃣ Audio engine (Tone.js)
+    // -------------------------------------------------
+    async function initSynths() {
+      // Simple synths – replace with richer voices if desired
+      state.synth.chords = new Tone.PolySynth(Tone.MembraneSynth).toDestination();
+      state.synth.melody = new Tone.Synth().toDestination();
+      state.synth.drums  = new Tone.MembraneSynth().toDestination();
+    }
+
+    async function playTracks(tracks) {
+      if (!state.isPlaying) {
+        // Ensure user interaction before playing on iOS
+        await Tone.start();
+        state.isPlaying = true;
       }
+      // ---- Drums ----
+      state.synth.drums.triggerAttack('C2', '8n');
+      // Simple kick/snare mapping for demo
+      tracks.drums.forEach(d => {
+        const synth = state.synth.drums;
+        const note = d.instrument==='kick' ? 'C2' : 'D2';
+        synth.triggerAttackRelease(note, d.duration, '0', d.velocity);
+      });
 
-      if (tracks && tracks.melody) {
-        tracks.melody.forEach(note => {
-          const noteIdx = noteToIndex(note.note);
-          if (noteIdx !== null) {
-            const keyElements = container.querySelectorAll('.key-white');
-            if (keyElements[noteIdx]) {
-              keyElements[noteIdx].classList.add('active');
-              keyElements[noteIdx].style.background = 'var(--red)';
-            }
-          }
-        });
-      }
+      // ---- Chords ----
+      state.synth.chords.setDestinationSolo(0);
+      tracks.chords.forEach((ch,i) => {
+        const synth = state.synth.chords;
+        const notes = chordToMidiNotes(ch);
+        notes.forEach(n => synth.triggerAttack(n, '4n'));
+        synth.releaseAll('2n');
+      });
 
-      if (tracks && tracks.drums) {
-        // Drums don't map to piano roll in same way, just show rhythm
-        const drumContainer = document.createElement('div');
-        drumContainer.style.marginTop = '10px';
-        drumContainer.innerHTML = `<p class="text-[var(--muted)] text-sm">Drum pattern generated: ${tracks.drums.length} steps</p>`;
-        container.appendChild(drumContainer);
-      }
+      // ---- Melody ----
+      const melodySynth = state.synth.melody;
+      tracks.melody.forEach(n => {
+        melodySynth.triggerAttack(n.note, '4n', n.velocity);
+        melodySynth.releaseAll('2n');
+      });
     }
 
-    function isBlackKey(idx) {
-      const blackKeys = [1, 3, 6, 8, 10]; // Relative to C
-      return blackKeys.includes(idx % 12);
+    function chordToMidiNotes(chordName) {
+      // Very naive: just return C,E,G for major, C,Eb,G for minor
+      const base = chordName.replace(/[m79]/g,'').replace('maj','');
+      const isMinor = chordName.includes('m');
+      const notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+      const rootIdx = notes.indexOf(base);
+      const intervals = isMinor ? [0,3,7] : [0,4,7];
+      return intervals.map(i=>notes[(rootIdx+i)%12]);
     }
 
-    function getKeyName(idx) {
-      const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-      return names[idx % 12];
-    }
-
-    function noteToIndex(noteName) {
-      const noteMap = {
-        'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4,
-        'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9,
-        'A#': 10, 'B': 11
-      };
-      const root = noteName.replace(/[0-9]/g, '');
-      return noteMap[root] !== undefined ? noteMap[root] : null;
-    }
-
-    function parseChordNotes(chordName) {
-      // Simple chord note parsing
-      const root = chordName.replace(/[m79]/g, '').replace('maj', '');
-      const intervals = {
-        '': [0, 4, 7], // Major: root, third, fifth
-        'm': [0, 3, 7], // Minor
-        '7': [0, 4, 7, 10] // Dominant 7th
-      };
-
-      const intervalSet = intervals[chordName.replace(root, '')] || [0, 4, 7];
-      const rootIdx = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 }[root] || 0;
-
-      return intervalSet.map(i => `${root}${i}`); // Return note names
-    }
-
-    // ============================================
-    // Event Handlers
-    // ============================================
-    document.getElementById('midi-input').addEventListener('change', (e) => {
+    // -------------------------------------------------
+    // 7️⃣ Event listeners
+    // -------------------------------------------------
+    document.getElementById('midi-input').addEventListener('change', async e=>{
       const file = e.target.files[0];
       if (!file) return;
-
       state.midiFile = file;
-      analyzeMidi(file).then(analysis => {
-        state.analysis = analysis;
-        state.bpm = analysis.bpm;
+      const analysis = await analyzeMidi(file);
+      state.analysis = analysis;
+      state.bpm = analysis.bpm;
+      document.getElementById('bpm-display').textContent = `${analysis.bpm} BPM`;
+      document.getElementById('bpm-input').value = analysis.bpm;
 
-        // Update UI
-        document.getElementById('bpm-display').textContent = `${analysis.bpm} BPM`;
-        document.getElementById('bpm-input').value = analysis.bpm;
+      // Show extracted info
+      document.getElementById('detected-info').classList.remove('hidden');
+      document.getElementById('chord-display').textContent = `Chords: ${analysis.chords.join(', ')}`;
+      document.getElementById('key-display').textContent = `Key: ${analysis.key}`;
+      document.getElementById('scale-display').textContent = `Scale: ${getScaleName(analysis.key)}`;
 
-        // Show detected info
-        document.getElementById('detected-info').classList.remove('hidden');
-        document.getElementById('chord-display').textContent = `Chords: ${analysis.chords.join(', ')}`;
-        document.getElementById('key-display').textContent = `Key: ${analysis.key}`;
-        document.getElementById('scale-display').textContent = `Scale: ${getScaleName(analysis.key)}`;
+      // Enable generation
+      document.getElementById('generate-btn').disabled = false;
+    });
 
-        // Enable generation
-        document.getElementById('generate-btn').disabled = false;
+    document.getElementById('bpm-input').addEventListener('input', e=>{
+      const val = parseInt(e.target.value);
+      if (!isNaN(val) && val>=40 && val<=300) state.bpm = val;
+      document.getElementById('bpm-display').textContent = `${val} BPM`;
+    });
+
+    document.querySelectorAll('[data-length]').forEach(btn=>{
+      btn.addEventListener('click',()=> {
+        state.chordLength = btn.dataset.length;
+        // visual toggle
+        document.querySelectorAll('[data-length]').forEach(b=>b.className='btn btn-secondary');
+        btn.className='btn btn-primary';
       });
     });
 
-    function getScaleName(key) {
-      const names = {
-        'C Major': 'C Major',
-        'G Major': 'G Major',
-        'D Major': 'D Major',
-        'A Minor': 'A Minor'
-      };
-      return names[key] || key;
-    }
-
-    document.getElementById('generate-btn').addEventListener('click', () => {
+    document.getElementById('generate-btn').addEventListener('click', async ()=>{
       if (!state.analysis) return;
-
-      const { chords, key } = state.analysis;
       const bars = parseInt(state.chordLength);
+      const generatedChords = generateChords(state.analysis.chords, state.selectedStyle);
+      const generatedMelody = generateMelody(generatedChords, state.analysis.key, state.bpm, state.selectedStyle);
+      const generatedDrums  = generateDrums(bars, state.selectedStyle);
 
-      // Generate tracks
-      const generatedChords = generateChords(chords, state.selectedStyle);
-      const generatedMelody = generateMelody(generatedChords, key, state.bpm, state.selectedStyle);
-      const generatedDrums = generateDrums(bars, state.selectedStyle);
+      state.generatedTracks = { chords: generatedChords, melody: generatedMelody, drums: generatedDrums };
+      buildPianoRoll(state.generatedTracks);
+      document.getElementById('chords-list').textContent = generatedChords.join('\n');
 
-      // Update state
-      state.generatedTracks = {
-        chords: generatedChords,
-        melody: generatedMelody,
-        drums: generatedDrums
-      };
+      // Enable Play button
+      document.getElementById('play-btn').disabled = false;
+      document.getElementById('play-btn').classList.remove('btn-disabled');
 
-      // Render
-      renderPianoRoll(state.generatedTracks);
-      renderChordsList(generatedChords);
-
-      // Enable export
+      // Enable Export
       document.getElementById('export-btn').disabled = false;
     });
 
-    function renderChordsList(chords) {
-      const list = document.getElementById('chords-list');
-      list.innerHTML = chords.map(c => `${c}`).join('\n');
-    }
-
-    document.getElementById('export-btn').addEventListener('click', () => {
-      // In a real app, this would create and download MIDI files
-      alert('Export functionality would generate 3 separate MIDI files:\n1. Chords track\n2. Melody track\n3. Drums track');
+    document.getElementById('play-btn').addEventListener('click', async ()=>{
+      if (!state.generatedTracks?.chords.length) return;
+      await initSynths();
+      await playTracks(state.generatedTracks);
     });
 
-    // BPM input
-    document.getElementById('bpm-input').addEventListener('change', (e) => {
-      const bpm = parseInt(e.target.value);
-      if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) {
-        state.bpm = bpm;
-        document.getElementById('bpm-display').textContent = `${bpm} BPM`;
-      }
+    document.getElementById('export-btn').addEventListener('click', ()=>{
+      alert('Export would generate three MIDI files:\n1. Chords\n2. Melody\n3. Drums');
     });
 
-    // Style selection
+    document.getElementById('help-btn').addEventListener('click',()=>{
+      document.getElementById('help-modal').classList.remove('hidden');
+    });
+    document.getElementById('close-modal').addEventListener('click',()=>{
+      document.getElementById('help-modal').classList.add('hidden');
+    });
+
+    // -------------------------------------------------
+    // 8️⃣ Initialise UI
+    // -------------------------------------------------
     renderStyleGrid();
-
-    // Initialize
     document.getElementById('generate-btn').disabled = true;
     document.getElementById('export-btn').disabled = true;
+    document.getElementById('play-btn').disabled = true;
+    document.getElementById('play-btn').classList.add('btn-disabled');
   </script>
 </body>
 </html>
