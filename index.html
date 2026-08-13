@@ -12,9 +12,9 @@
   --text:#d8d8e2; --dim:#7a7a8c; --accent:#e0642a; --accent-glow:rgba(224,100,42,.45);
   --accent2:#2d9d78; --accent3:#4a6fd4; --danger:#d9455a; --mono:'SF Mono','Courier New',monospace;
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation;}
 input,select,textarea{user-select:text;}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,'Inter',system-ui,sans-serif;overflow:hidden;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,'Inter',system-ui,sans-serif;overflow:hidden;touch-action:manipulation;}
 body{display:flex;flex-direction:column;height:100dvh;}
 ::-webkit-scrollbar{width:6px;height:6px;}
 ::-webkit-scrollbar-thumb{background:#2a2a38;border-radius:3px;}
@@ -46,8 +46,10 @@ body{display:flex;flex-direction:column;height:100dvh;}
 .field{margin-bottom:12px;}
 .field label{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;}
 .field label b{color:var(--text);font-weight:600;}
-select,input[type=number],input[type=text]{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:9px 10px;font-size:13px;min-height:40px;}
-select:focus,input:focus{outline:none;border-color:var(--accent);}
+select,input[type=number],input[type=text],textarea{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:9px 10px;font-size:13px;min-height:40px;font-family:inherit;}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--accent);}
+input[type=file]{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:7px;padding:8px;font-size:12px;}
+input[type=checkbox]{width:16px;height:16px;min-height:auto;accent-color:var(--accent);}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:30px;}
 input[type=range]::-webkit-slider-runnable-track{height:4px;background:#22222e;border-radius:2px;}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;margin-top:-7px;height:18px;width:18px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent-glow);}
@@ -122,9 +124,9 @@ canvas{display:block;}
 <script>
 /* ============================================================
    GENERATIVE MUSIC STUDIO — UNIFIED
-   Combines: Markov chord generation, genre bass/drum patterns,
-   voice-leading, flowing melody generation, chaos modulation,
-   piano roll + step sequencer + mixer, multi-track MIDI + WAV export.
+   Markov chord generation + Lorenz chaos modulation, genre-attuned
+   melody/bass/drum profiles, custom chord input, editable piano roll,
+   combined roll+drum screen, multi-track MIDI + WAV export.
    ============================================================ */
 
 /* ---------------- MUSIC THEORY ---------------- */
@@ -137,20 +139,20 @@ const SCALES = {
   phrygian:   [0,1,3,5,7,8,10],
   lydian:     [0,2,4,6,7,9,11],
   harmonicMinor:[0,2,3,5,7,8,11],
-  pentatonicMajor:[0,2,4,7,9],
-  pentatonicMinor:[0,3,5,7,10],
 };
-// Roman-numeral scale-degree chords (triads by default, extended per genre)
-const DEGREE_TRIADS = [0,1,2,3,4,5,6]; // scale degree indices 0..6
+const MINOR_LIKE_SCALES = new Set(['minor','dorian','phrygian','harmonicMinor']);
+const ROMAN_MAJOR = ['I','ii','iii','IV','V','vi','vii°'];
+const ROMAN_MINOR = ['i','ii°','III','iv','v','VI','VII'];
+function getRomanLabels(genre){ return MINOR_LIKE_SCALES.has(genre.scale) ? ROMAN_MINOR : ROMAN_MAJOR; }
 
-/* Genre profiles: Markov transition weights between scale degrees (I..VII),
-   plus rhythmic/voicing/instrumentation character. Derived from patterns
-   observed across the reference apps' genre presets (pop/rock/jazz/house/
-   cinematic/ambient/indie). */
+/* Genre profiles: Markov transition weights between scale degrees (0-6),
+   plus rhythmic/voicing/instrumentation character and a melody profile
+   that shapes rhythm choices, step-vs-leap bias, register and swing so
+   melodic generation actually sounds different per genre, not just the
+   chord choices. */
 const GENRES = {
   pop: {
-    label:'Pop', scale:'major', tempo:104, extension:0.15,
-    // transition matrix by scale degree 0-6 (I ii iii IV V vi vii)
+    label:'Pop', scale:'major', tempo:104, extension:0.15, swing:0,
     matrix:[
       [0.05,0.05,0.02,0.30,0.30,0.20,0.08],
       [0.10,0.05,0.05,0.15,0.45,0.15,0.05],
@@ -160,10 +162,11 @@ const GENRES = {
       [0.15,0.10,0.05,0.35,0.20,0.05,0.10],
       [0.35,0.05,0.05,0.15,0.30,0.05,0.05],
     ],
-    bass:'root-fifth', drum:'pop'
+    bass:'root-fifth', drum:'pop',
+    melody:{ rhythms:[0.5,0.5,1,1,1,2], stepBias:0.65, restBias:0.15, registerOct:0 }
   },
   rock: {
-    label:'Rock', scale:'major', tempo:126, extension:0.05,
+    label:'Rock', scale:'major', tempo:126, extension:0.05, swing:0,
     matrix:[
       [0.10,0.02,0.03,0.35,0.35,0.10,0.05],
       [0.10,0.05,0.05,0.20,0.40,0.15,0.05],
@@ -173,23 +176,53 @@ const GENRES = {
       [0.15,0.10,0.05,0.40,0.20,0.05,0.05],
       [0.40,0.05,0.05,0.15,0.25,0.05,0.05],
     ],
-    bass:'power-drive', drum:'rock'
+    bass:'power-drive', drum:'rock',
+    melody:{ rhythms:[0.5,0.5,1,1,2], stepBias:0.45, restBias:0.12, registerOct:0 }
   },
-  jazz: {
-    label:'Jazz', scale:'major', tempo:112, extension:0.85,
+  country: {
+    label:'Country', scale:'major', tempo:100, extension:0.05, swing:0,
     matrix:[
-      [0.05,0.30,0.05,0.10,0.10,0.35,0.05],
-      [0.05,0.05,0.10,0.10,0.55,0.10,0.05],
-      [0.05,0.10,0.05,0.10,0.10,0.55,0.05],
-      [0.10,0.10,0.05,0.05,0.45,0.10,0.15],
-      [0.45,0.05,0.05,0.10,0.05,0.10,0.20],
-      [0.10,0.45,0.05,0.10,0.10,0.05,0.15],
-      [0.35,0.10,0.05,0.05,0.15,0.05,0.05],
+      [0.05,0.05,0.02,0.35,0.35,0.15,0.03],
+      [0.10,0.05,0.05,0.15,0.55,0.10,0.00],
+      [0.15,0.10,0.05,0.30,0.15,0.20,0.05],
+      [0.35,0.05,0.05,0.05,0.35,0.15,0.00],
+      [0.55,0.05,0.05,0.15,0.05,0.15,0.00],
+      [0.15,0.05,0.05,0.45,0.20,0.05,0.05],
+      [0.45,0.05,0.05,0.15,0.25,0.05,0.05],
     ],
-    bass:'walking', drum:'jazz'
+    bass:'country-boomchick', drum:'country',
+    melody:{ rhythms:[0.5,1,1,1,1.5,2], stepBias:0.78, restBias:0.18, registerOct:0 }
+  },
+  hiphop: {
+    label:'Hip-Hop', scale:'minor', tempo:88, extension:0.15, swing:0.15,
+    matrix:[
+      [0.30,0.05,0.05,0.15,0.05,0.30,0.15],
+      [0.20,0.10,0.05,0.15,0.10,0.30,0.10],
+      [0.20,0.05,0.10,0.15,0.05,0.35,0.10],
+      [0.30,0.05,0.05,0.10,0.05,0.35,0.10],
+      [0.25,0.05,0.05,0.20,0.05,0.30,0.10],
+      [0.35,0.05,0.05,0.15,0.05,0.10,0.25],
+      [0.40,0.05,0.05,0.15,0.05,0.20,0.10],
+    ],
+    bass:'trap-808', drum:'hiphop',
+    melody:{ rhythms:[0.25,0.25,0.5,0.5,1], stepBias:0.35, restBias:0.30, registerOct:0 }
+  },
+  rnb: {
+    label:'R&B / Soul', scale:'dorian', tempo:76, extension:0.75, swing:0.2,
+    matrix:[
+      [0.10,0.20,0.05,0.20,0.15,0.20,0.10],
+      [0.10,0.05,0.05,0.10,0.50,0.15,0.05],
+      [0.15,0.10,0.05,0.25,0.10,0.30,0.05],
+      [0.15,0.05,0.10,0.05,0.40,0.20,0.05],
+      [0.35,0.05,0.05,0.20,0.05,0.25,0.05],
+      [0.10,0.15,0.05,0.30,0.20,0.05,0.15],
+      [0.30,0.10,0.05,0.15,0.25,0.10,0.05],
+    ],
+    bass:'soul-groove', drum:'rnb',
+    melody:{ rhythms:[0.25,0.5,0.5,0.75,1,1.5], stepBias:0.55, restBias:0.20, registerOct:0 }
   },
   house: {
-    label:'House', scale:'minor', tempo:124, extension:0.25,
+    label:'House', scale:'minor', tempo:124, extension:0.25, swing:0.05,
     matrix:[
       [0.15,0.05,0.30,0.20,0.10,0.15,0.05],
       [0.10,0.10,0.10,0.20,0.30,0.15,0.05],
@@ -199,10 +232,11 @@ const GENRES = {
       [0.25,0.05,0.20,0.20,0.15,0.05,0.10],
       [0.30,0.10,0.10,0.15,0.25,0.05,0.05],
     ],
-    bass:'house-pulse', drum:'house'
+    bass:'house-pulse', drum:'house',
+    melody:{ rhythms:[0.25,0.25,0.5,0.5], stepBias:0.5, restBias:0.15, registerOct:1 }
   },
   cinematic: {
-    label:'Cinematic', scale:'minor', tempo:78, extension:0.4,
+    label:'Cinematic', scale:'minor', tempo:78, extension:0.4, swing:0,
     matrix:[
       [0.10,0.05,0.25,0.20,0.10,0.20,0.10],
       [0.10,0.10,0.10,0.20,0.30,0.15,0.05],
@@ -212,10 +246,11 @@ const GENRES = {
       [0.15,0.05,0.30,0.20,0.15,0.05,0.10],
       [0.25,0.10,0.10,0.15,0.30,0.05,0.05],
     ],
-    bass:'drone', drum:'cinematic'
+    bass:'drone', drum:'cinematic',
+    melody:{ rhythms:[1,2,2,3,4], stepBias:0.7, restBias:0.25, registerOct:0 }
   },
   ambient: {
-    label:'Ambient', scale:'lydian', tempo:64, extension:0.6,
+    label:'Ambient', scale:'lydian', tempo:64, extension:0.6, swing:0,
     matrix:[
       [0.20,0.10,0.20,0.15,0.10,0.20,0.05],
       [0.15,0.15,0.15,0.15,0.20,0.15,0.05],
@@ -225,10 +260,11 @@ const GENRES = {
       [0.20,0.10,0.20,0.15,0.15,0.10,0.10],
       [0.20,0.10,0.15,0.20,0.20,0.10,0.05],
     ],
-    bass:'drone', drum:'none'
+    bass:'drone', drum:'none',
+    melody:{ rhythms:[2,3,4,4], stepBias:0.6, restBias:0.4, registerOct:1 }
   },
   indie: {
-    label:'Indie', scale:'major', tempo:96, extension:0.2,
+    label:'Indie', scale:'major', tempo:96, extension:0.2, swing:0,
     matrix:[
       [0.10,0.10,0.10,0.30,0.20,0.15,0.05],
       [0.10,0.10,0.10,0.20,0.35,0.10,0.05],
@@ -238,7 +274,8 @@ const GENRES = {
       [0.15,0.10,0.10,0.35,0.20,0.05,0.05],
       [0.30,0.10,0.05,0.15,0.30,0.05,0.05],
     ],
-    bass:'root-fifth', drum:'indie'
+    bass:'root-fifth', drum:'indie',
+    melody:{ rhythms:[0.5,0.5,1,1,1.5], stepBias:0.6, restBias:0.18, registerOct:0 }
   },
 };
 
@@ -246,14 +283,16 @@ const GENRES = {
 const DRUM_PATTERNS = {
   pop:      { kick:[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0], hat:[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], clap:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1] },
   rock:     { kick:[1,0,0,1,0,0,1,0,1,0,0,1,0,0,1,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0], hat:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0], clap:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
-  jazz:     { kick:[1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0], snare:[0,0,1,0,0,0,0,1,0,0,0,0,1,0,0,1], hat:[1,0,1,1,0,1,1,0,1,0,1,1,0,1,1,0], clap:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
+  country:  { kick:[1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0], hat:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0], clap:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
+  hiphop:   { kick:[1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0], hat:[1,1,0,1,1,0,1,1,0,1,1,0,1,1,0,1], clap:[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1] },
+  rnb:      { kick:[1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1], hat:[1,0,1,1,0,1,1,0,1,1,0,1,1,0,1,1], clap:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
   house:    { kick:[1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0], snare:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hat:[0,0,1,0,0,0,1,0,0,0,1,0,0,0,1,0], clap:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0] },
   cinematic:{ kick:[1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0], snare:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hat:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], clap:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
   indie:    { kick:[1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0], snare:[0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0], hat:[1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0], clap:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
   none:     { kick:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], snare:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], hat:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], clap:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
 };
 
-/* ---------------- LORENZ CHAOS GENERATOR (optional modulation source) ---------------- */
+/* ---------------- LORENZ CHAOS GENERATOR (modulation source) ---------------- */
 class Lorenz {
   constructor(){ this.x=0.1; this.y=0; this.z=0; this.sigma=10; this.rho=28; this.beta=8/3; }
   step(dt=0.008){
@@ -263,11 +302,52 @@ class Lorenz {
     this.x+=dx*dt; this.y+=dy*dt; this.z+=dz*dt;
     return this;
   }
-  norm01(){ // rough normalization of x into 0..1
-    return Math.min(1,Math.max(0,(this.x+25)/50));
-  }
+  norm01(){ return Math.min(1,Math.max(0,(this.x+25)/50)); }
 }
 const lorenz = new Lorenz();
+
+/* ---------------- CHORD SYMBOL PARSING (custom chord input) ---------------- */
+const QUALITY_INTERVALS = {
+  '':[0,4,7], 'maj':[0,4,7], 'M':[0,4,7],
+  'm':[0,3,7], 'min':[0,3,7], '-':[0,3,7],
+  '7':[0,4,7,10], 'dom7':[0,4,7,10],
+  'maj7':[0,4,7,11], 'M7':[0,4,7,11],
+  'm7':[0,3,7,10], 'min7':[0,3,7,10], '-7':[0,3,7,10],
+  'dim':[0,3,6], 'o':[0,3,6],
+  'dim7':[0,3,6,9],
+  'aug':[0,4,8], '+':[0,4,8],
+  'sus2':[0,2,7],
+  'sus4':[0,5,7], 'sus':[0,5,7],
+  '6':[0,4,7,9], 'maj6':[0,4,7,9],
+  'm6':[0,3,7,9], 'min6':[0,3,7,9],
+  '9':[0,4,7,10,14],
+  'maj9':[0,4,7,11,14],
+  'm9':[0,3,7,10,14], 'min9':[0,3,7,10,14],
+  'add9':[0,4,7,14],
+};
+function parseChordSymbol(sym){
+  sym = (sym||'').trim();
+  if(!sym) return null;
+  const m = /^([A-Ga-g])([#b]?)(.*)$/.exec(sym);
+  if(!m) return null;
+  let [, letter, acc, rest] = m;
+  let pc = NOTE_NAMES.indexOf(letter.toUpperCase());
+  if(pc<0) return null;
+  if(acc==='#') pc=(pc+1)%12;
+  if(acc==='b') pc=(pc+11)%12;
+  rest = rest.trim();
+  let intervals = QUALITY_INTERVALS[rest] || QUALITY_INTERVALS[rest.toLowerCase()];
+  if(!intervals) intervals = QUALITY_INTERVALS['maj'];
+  return { rootPc:pc, intervals, label:sym };
+}
+function parseChordSequence(text){
+  return (text||'')
+    .split(/[\s,;|]+/)
+    .map(s=>s.trim())
+    .filter(Boolean)
+    .map(parseChordSymbol)
+    .filter(Boolean);
+}
 
 /* ---------------- HELPERS ---------------- */
 function weightedChoice(weights){
@@ -284,31 +364,33 @@ function scaleDegreeToMidi(scaleArr, root, degree, octaveShift=0){
   return root + scaleArr[idx] + 12*(oct+octaveShift);
 }
 function triadFromDegree(scaleArr, root, degree, extended, chaosAmt){
-  // build stacked-third chord: root, +2 degree, +4 degree, optional +6 (7th) if extended
   const notes = [0,2,4];
   if(extended>Math.random()) notes.push(6);
-  if(extended>0.7 && Math.random()<0.3) notes.push(8); // 9th color tone for jazz/ambient
+  if(extended>0.7 && Math.random()<0.3) notes.push(8);
   return notes.map(iv=>scaleDegreeToMidi(scaleArr, root, degree+iv));
 }
 
 /* ---------------- GENERATION ENGINE ---------------- */
 const Gen = {
-  progression:[], // array of {degree, chordTones:[midi...], bar}
-  bass:[],        // array of {time(beat), midi, dur}
-  melody:[],      // array of {time(beat), midi, dur, vel}
-  drums:{},       // per-instrument 16*bars step arrays
+  progression:[], chordVoiced:[], bass:[], melody:[], drums:{}, currentGenre:null,
 
   generateAll(opts){
-    const { genreKey, key, bars, chaos, useMarkov, melodyDensity } = opts;
+    const { genreKey, key, bars, chaos, useMarkov, melodyDensity, customChords } = opts;
     const genre = GENRES[genreKey];
-    const scaleName = genre.scale;
-    const scaleArr = SCALES[scaleName];
+    this.currentGenre = genre;
+    const scaleArr = SCALES[genre.scale];
     const root = keyRootMidi(key);
 
-    this.progression = this.generateChords(genre, scaleArr, root, bars, chaos, useMarkov);
+    if(customChords && customChords.length){
+      this.progression = this.chordsFromCustom(customChords, bars);
+    } else {
+      this.progression = this.generateChords(genre, scaleArr, root, bars, chaos, useMarkov);
+    }
     this.chordVoiced = this.voiceLeadChords(this.progression);
+
+    const melodyRoot = (customChords && customChords.length) ? (48+customChords[0].rootPc) : root;
     this.bass = this.generateBass(this.chordVoiced, genre, bars, root, scaleArr);
-    this.melody = this.generateMelody(this.chordVoiced, scaleArr, root, bars, chaos, melodyDensity);
+    this.melody = this.generateMelody(this.chordVoiced, scaleArr, melodyRoot, bars, chaos, melodyDensity, genre);
     this.drums = this.generateDrums(genre, bars);
     return {
       progression:this.progression, chordVoiced:this.chordVoiced,
@@ -316,11 +398,22 @@ const Gen = {
     };
   },
 
-  // Markov-chain walk across scale-degree chords, weighted by genre transition matrix,
-  // with chaos parameter blending in uniform-random exploration (from Lorenz noise).
+  chordsFromCustom(customChords, bars){
+    const prog = [];
+    for(let bar=0; bar<bars; bar++){
+      const c = customChords[bar % customChords.length];
+      const rootMidi = 48 + c.rootPc;
+      const chordTones = c.intervals.map(iv=>rootMidi+iv);
+      prog.push({ bar, degree:null, chordTones, label:c.label });
+    }
+    return prog;
+  },
+
+  // Markov-chain walk across scale-degree chords, weighted by genre transition
+  // matrix, with a chaos parameter blending in Lorenz-attractor noise.
   generateChords(genre, scaleArr, root, bars, chaos, useMarkov){
     const prog = [];
-    let degree = 0; // start on I
+    let degree = 0;
     for(let bar=0; bar<bars; bar++){
       let nextDegree;
       if(useMarkov){
@@ -340,15 +433,12 @@ const Gen = {
       const chordTones = triadFromDegree(scaleArr, root, degree, genre.extension, chaos);
       prog.push({ bar, degree, chordTones });
     }
-    // Resolve final bar to tonic for cadence feel, most of the time
     if(bars>1 && Math.random()<0.7){
       prog[prog.length-1] = { bar:bars-1, degree:0, chordTones: triadFromDegree(scaleArr, root, 0, genre.extension, chaos) };
     }
     return prog;
   },
 
-  // Smooth voice leading: for each successive chord, choose octave placements of each
-  // tone that minimize total semitone movement from the previous chord's voicing.
   voiceLeadChords(prog){
     const voiced = [];
     let prevVoicing = null;
@@ -359,7 +449,6 @@ const Gen = {
           let best=t, bestDist=Infinity;
           for(let o=-12;o<=12;o+=12){
             const candidate = t+o;
-            // distance to nearest previous voice
             const dist = Math.min(...prevVoicing.map(p=>Math.abs(p-candidate)));
             if(dist<bestDist){ bestDist=dist; best=candidate; }
           }
@@ -367,13 +456,13 @@ const Gen = {
         });
       }
       tones.sort((a,b)=>a-b);
-      voiced.push({ bar:ch.bar, degree:ch.degree, notes:tones });
+      voiced.push({ bar:ch.bar, degree:ch.degree, label:ch.label, notes:tones });
       prevVoicing = tones;
     }
     return voiced;
   },
 
-  // Genre-specific bass pattern generator (root-fifth / walking / power-drive / house-pulse / drone)
+  // Genre-specific bass pattern generator.
   generateBass(chordVoiced, genre, bars, root, scaleArr){
     const events = [];
     chordVoiced.forEach((ch, i)=>{
@@ -381,17 +470,29 @@ const Gen = {
       const rootNote = Math.min(...ch.notes) - 12;
       const fifth = rootNote + 7;
       switch(genre.bass){
-        case 'walking': {
-          const next = chordVoiced[i+1] ? Math.min(...chordVoiced[i+1].notes)-12 : rootNote;
-          const step2 = rootNote + (Math.random()<0.5?2:-2);
-          const approach = next + (next>rootNote?-1:1);
-          [rootNote, rootNote+4, step2, approach].forEach((n,k)=>{
-            events.push({ time:beatStart+k, midi:n, dur:0.95, vel:0.7 });
+        case 'country-boomchick': {
+          for(let k=0;k<4;k++){
+            const n = k%2===0 ? rootNote : fifth;
+            events.push({ time:beatStart+k, midi:n, dur:0.45, vel:k%2===0?0.85:0.6 });
+          }
+          break;
+        }
+        case 'trap-808': {
+          const hits = [0,0.75,1.5,2,2.75,3.5];
+          hits.forEach((offset,idx)=>{
+            const midiNote = idx%3===0 ? rootNote-12 : rootNote;
+            events.push({ time:beatStart+offset, midi:midiNote, dur:0.65, vel:idx===0?0.95:0.75 });
           });
           break;
         }
+        case 'soul-groove': {
+          const notes = [rootNote, rootNote+3, fifth, rootNote+2];
+          const offsets = [0,1.25,2,3.5];
+          notes.forEach((n,idx)=> events.push({ time:beatStart+offsets[idx], midi:n, dur:0.9, vel: idx===0?0.85:0.6 }));
+          break;
+        }
         case 'power-drive': {
-          for(let k=0;k<4;k++) events.push({ time:beatStart+k, midi: k%2===0?rootNote:rootNote, dur:0.9, vel:0.85 });
+          for(let k=0;k<4;k++) events.push({ time:beatStart+k, midi:rootNote, dur:0.9, vel:0.85 });
           break;
         }
         case 'house-pulse': {
@@ -413,34 +514,38 @@ const Gen = {
     return events;
   },
 
-  // Flowing melody: walks the active chord tones + passing scale tones, with a contour
-  // biased by chaos/lorenz for expressive variation, syncopated rhythm subdivisions.
-  generateMelody(chordVoiced, scaleArr, root, bars, chaos, density){
+  // Flowing melody generator, shaped per genre by rhythm palette, step/leap
+  // bias, rest density and register, with chaos/Lorenz noise perturbing contour.
+  generateMelody(chordVoiced, scaleArr, root, bars, chaos, density, genre){
     const events = [];
-    const rhythmOptions = [0.5, 1, 1, 1.5, 2]; // beat durations to pick from
-    let regDegreeIndex = 3; // start roughly mid-register within scale
+    const prof = genre.melody;
+    const rhythmOptions = prof.rhythms;
+    let regDegreeIndex = 3 + (prof.registerOct*7);
     chordVoiced.forEach((ch, i)=>{
       let beat = i*4;
       const barEnd = beat+4;
       const chordToneSet = ch.notes.map(n=> ((n%12)+12)%12 );
       while(beat < barEnd){
-        if(Math.random() > density){ // rest
-          const restLen = rhythmOptions[Math.floor(Math.random()*2)];
+        const effectiveRest = Math.max(0, prof.restBias - (density-0.75)*0.4);
+        if(Math.random() < effectiveRest || Math.random() > density){
+          const restLen = rhythmOptions[Math.floor(Math.random()*Math.min(2,rhythmOptions.length))];
           beat += restLen; continue;
         }
         lorenz.step();
         const noise = (lorenz.norm01()-0.5)*2; // -1..1
-        let step = Math.round(noise*chaos*3 + (Math.random()<0.5?1:-1)*(chaos<0.05?1:0));
-        if(Math.random()<0.6){
-          // favor stepwise motion within scale
+        let step;
+        const leapRoll = Math.random();
+        if(leapRoll < prof.stepBias){
           step = (Math.random()<0.5?1:-1);
-        } else if(Math.random()<0.5){
-          step = (Math.random()<0.5?2:-2); // small leap
+        } else if(leapRoll < prof.stepBias+0.25){
+          step = (Math.random()<0.5?2:-2);
+        } else {
+          step = Math.round(noise*3*(0.3+chaos));
         }
+        step += Math.round(noise*chaos*2);
         regDegreeIndex += step;
-        regDegreeIndex = Math.max(-2, Math.min(12, regDegreeIndex));
+        regDegreeIndex = Math.max(-2+(prof.registerOct*7), Math.min(12+(prof.registerOct*7), regDegreeIndex));
         let midi = scaleDegreeToMidi(scaleArr, root, regDegreeIndex, 1);
-        // snap occasionally onto a chord tone for consonance on strong beats
         const isStrongBeat = (beat - Math.floor(beat)) === 0;
         if(isStrongBeat && Math.random()<0.55){
           const pc = ((midi%12)+12)%12;
@@ -454,11 +559,15 @@ const Gen = {
             midi = best;
           }
         }
-        let durIdx = Math.floor(Math.random()*rhythmOptions.length);
-        let dur = rhythmOptions[durIdx];
+        let dur = rhythmOptions[Math.floor(Math.random()*rhythmOptions.length)];
         if(beat+dur>barEnd) dur = barEnd-beat;
+        // swing: delay notes landing on the off-8th within a beat
+        let time = beat;
+        if(genre.swing>0 && Math.abs((beat%1)-0.5)<0.01){
+          time += genre.swing*0.5;
+        }
         const vel = 0.55 + Math.random()*0.35;
-        events.push({ time:beat, midi, dur:dur*0.92, vel });
+        events.push({ time, midi, dur:Math.max(0.1,dur*0.92), vel });
         beat += dur;
       }
     });
@@ -479,27 +588,24 @@ const Gen = {
 
 /* ---------------- AUDIO ENGINE ---------------- */
 let actx = null;
-const mixerState = {
-  chords:{ vol:0.7, mute:false }, bass:{ vol:0.8, mute:false },
-  melody:{ vol:0.85, mute:false }, drums:{ vol:0.75, mute:false },
-};
+// Fixed internal mix levels (no exposed mixer panel per user preference).
+const MIX_LEVELS = { chords:0.55, bass:0.85, melody:0.9, drums:0.8 };
 function ensureAudio(){
   if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)();
-  if(actx.state==='suspended') actx.resume();
+  if(actx.state==='suspended') actx.resume().catch(()=>{});
   return actx;
 }
 function midiToFreq(m){ return 440*Math.pow(2,(m-69)/12); }
 
 function playSynthNote(midi, startTime, dur, vel, type, track){
   const ctx = ensureAudio();
-  const mix = mixerState[track];
-  if(mix.mute) return;
+  const vol = MIX_LEVELS[track] !== undefined ? MIX_LEVELS[track] : 0.7;
   const gain = ctx.createGain();
   const osc1 = ctx.createOscillator();
   const osc2 = ctx.createOscillator();
   const filter = ctx.createBiquadFilter();
   filter.type='lowpass';
-  const waveMap = { chords:'triangle', bass:'sawtooth', melody:'sine', pluck:'square' };
+  const waveMap = { chords:'triangle', bass:'sawtooth', melody:'sine' };
   osc1.type = waveMap[type]||'sine';
   osc2.type = 'sine';
   osc2.detune.value = 6;
@@ -507,7 +613,7 @@ function playSynthNote(midi, startTime, dur, vel, type, track){
   osc1.frequency.value = freq;
   osc2.frequency.value = freq;
   filter.frequency.value = type==='bass' ? 900 : 3200;
-  const peak = vel*mix.vol*0.28;
+  const peak = vel*vol*0.28;
   const attack = type==='chords'?0.05:0.008;
   const release = Math.max(0.06, dur*0.35);
   gain.gain.setValueAtTime(0.0001, startTime);
@@ -520,11 +626,10 @@ function playSynthNote(midi, startTime, dur, vel, type, track){
 }
 function playDrumHit(inst, startTime, vel, track){
   const ctx = ensureAudio();
-  const mix = mixerState[track];
-  if(mix.mute) return;
+  const vol = MIX_LEVELS[track] !== undefined ? MIX_LEVELS[track] : 0.7;
   const gain = ctx.createGain();
   gain.connect(ctx.destination);
-  const peak = vel*mix.vol*0.5;
+  const peak = vel*vol*0.5;
   if(inst==='kick'){
     const osc = ctx.createOscillator(); osc.type='sine';
     osc.frequency.setValueAtTime(150,startTime);
@@ -550,8 +655,7 @@ function playDrumHit(inst, startTime, vel, track){
 /* ---------------- PLAYBACK SCHEDULER ---------------- */
 const Transport = {
   playing:false, startCtxTime:0, bpm:104, bars:8,
-  lookahead:0.12, timerId:null, currentBeat:0,
-  scheduledUntil:0,
+  lookahead:0.12, timerId:null, scheduledUntil:0,
 
   secondsPerBeat(){ return 60/this.bpm; },
   totalBeats(){ return this.bars*4; },
@@ -574,11 +678,27 @@ const Transport = {
     document.getElementById('playBtn').textContent = '▶ Play';
     document.getElementById('timeDisplay').textContent = `Bar 1 / ${this.bars}`;
   },
+  // Called when tab regains focus/visibility: resume audio and resync the
+  // scheduling window instead of trying to catch up on everything missed,
+  // which is what caused playback to silently die when backgrounded.
+  resyncOnResume(){
+    if(!this.playing) return;
+    ensureAudio();
+    if(actx.state==='suspended'){ actx.resume().catch(()=>{}); }
+    const elapsed = actx.currentTime - this.startCtxTime;
+    this.scheduledUntil = Math.max(this.scheduledUntil, elapsed);
+  },
   _tick(){
     if(!this.playing) return;
+    if(actx.state==='suspended'){ actx.resume().catch(()=>{}); return; }
     const now = actx.currentTime;
     const elapsed = now - this.startCtxTime;
     const loopDur = this.totalBeats()*this.secondsPerBeat();
+    // If we fell far behind (backgrounded tab throttling / suspended context),
+    // resync instead of flooding the scheduler with a huge backlog.
+    if(elapsed - this.scheduledUntil > 1.0){
+      this.scheduledUntil = elapsed;
+    }
     while(this.scheduledUntil < elapsed + this.lookahead){
       this._scheduleWindow(this.scheduledUntil, this.scheduledUntil+0.04);
       this.scheduledUntil += 0.04;
@@ -612,12 +732,13 @@ const Transport = {
     });
     play(Gen.bass||[], (ev,t)=>playSynthNote(ev.midi,t,ev.dur*spb,ev.vel,'bass','bass'));
     play(Gen.melody||[], (ev,t)=>playSynthNote(ev.midi,t,ev.dur*spb,ev.vel,'melody','melody'));
-    // drums: step-based, 16 steps per bar = 0.25 beat each
     if(Gen.drums){
+      const swing = (Gen.currentGenre && Gen.currentGenre.swing) || 0;
       for(const inst of Object.keys(Gen.drums)){
         const arr = Gen.drums[inst];
         for(let s=0;s<arr.length;s++){
-          const stepBeat = s*0.25;
+          let stepBeat = s*0.25;
+          if(swing>0 && s%2===1) stepBeat += swing*0.25;
           if(arr[s] && stepBeat>=fb && stepBeat<tb){
             const t = this.startCtxTime + (Math.floor(fromBeat/loopBeats)*loopBeats + stepBeat)*spb;
             playDrumHit(inst,t,0.8,'drums');
@@ -640,7 +761,6 @@ function u16(n){ return [(n>>8)&255,n&255]; }
 function strBytes(s){ return Array.from(s).map(c=>c.charCodeAt(0)); }
 
 function buildTrackChunk(events, channel, name, ppq){
-  // events: [{beat, midi, dur, vel}], sorted by beat ascending required
   const sorted = events.slice().sort((a,b)=>a.time-b.time);
   let data = [];
   data.push(0x00, 0xFF, 0x03, name.length, ...strBytes(name));
@@ -660,7 +780,7 @@ function buildTrackChunk(events, channel, name, ppq){
     if(e.type==='on') data.push(0x90|channel, e.midi & 0x7F, e.vel & 0x7F);
     else data.push(0x80|channel, e.midi & 0x7F, 0);
   });
-  data.push(0x00, 0xFF, 0x2F, 0x00); // end of track
+  data.push(0x00, 0xFF, 0x2F, 0x00);
   return [0x4D,0x54,0x72,0x6B, ...u32(data.length), ...data];
 }
 function buildTempoTrack(bpm, ppq){
@@ -746,12 +866,18 @@ async function exportWAV(){
       noise.connect(filt); filt.connect(gain); noise.start(startTime); noise.stop(startTime+0.25);
     }
   };
-  (Gen.chordVoiced||[]).forEach((ch,i)=>{ ch.notes.forEach(n=>renderNote(n,i*4*spb,3.8*spb,0.5,'chords',mixerState.chords.vol)); });
-  (Gen.bass||[]).forEach(ev=>renderNote(ev.midi,ev.time*spb,ev.dur*spb,ev.vel,'bass',mixerState.bass.vol));
-  (Gen.melody||[]).forEach(ev=>renderNote(ev.midi,ev.time*spb,ev.dur*spb,ev.vel,'melody',mixerState.melody.vol));
+  const swing = (Gen.currentGenre && Gen.currentGenre.swing) || 0;
+  (Gen.chordVoiced||[]).forEach((ch,i)=>{ ch.notes.forEach(n=>renderNote(n,i*4*spb,3.8*spb,0.5,'chords',MIX_LEVELS.chords)); });
+  (Gen.bass||[]).forEach(ev=>renderNote(ev.midi,ev.time*spb,ev.dur*spb,ev.vel,'bass',MIX_LEVELS.bass));
+  (Gen.melody||[]).forEach(ev=>renderNote(ev.midi,ev.time*spb,ev.dur*spb,ev.vel,'melody',MIX_LEVELS.melody));
   if(Gen.drums){
     for(const inst of Object.keys(Gen.drums)){
-      Gen.drums[inst].forEach((hit,s)=>{ if(hit) renderDrum(inst,s*0.25*spb,0.8,mixerState.drums.vol); });
+      Gen.drums[inst].forEach((hit,s)=>{
+        if(!hit) return;
+        let stepBeat = s*0.25;
+        if(swing>0 && s%2===1) stepBeat += swing*0.25;
+        renderDrum(inst,stepBeat*spb,0.8,MIX_LEVELS.drums);
+      });
     }
   }
   const rendered = await offlineCtx.startRendering();
@@ -791,7 +917,8 @@ function downloadBlob(blob, filename){
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 500);
 }
 
-/* ---------------- PIANO ROLL RENDER ---------------- */
+/* ---------------- PIANO ROLL RENDER + EDITING ---------------- */
+window._roll = { beatW:40, noteH:10, minM:55, cssH:260 };
 function drawPianoRoll(){
   const canvas = document.getElementById('rollCanvas');
   if(!canvas) return;
@@ -799,42 +926,56 @@ function drawPianoRoll(){
   const wrap = canvas.parentElement;
   const dpr = window.devicePixelRatio||1;
   const cssW = Math.max(wrap.clientWidth, Transport.bars*4*40);
-  const cssH = 260;
+  const cssH = 280;
   canvas.width = cssW*dpr; canvas.height = cssH*dpr;
   canvas.style.width = cssW+'px'; canvas.style.height=cssH+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.fillStyle='#08080d'; ctx.fillRect(0,0,cssW,cssH);
 
   const allNotes = [
-    ...(Gen.melody||[]).map(e=>({...e,color:'#e0642a'})),
-    ...(Gen.bass||[]).map(e=>({...e,color:'#4a6fd4'})),
+    ...(Gen.melody||[]).map(e=>({...e,color:'#e0642a',editable:true})),
+    ...(Gen.bass||[]).map(e=>({...e,color:'#4a6fd455',editable:false})),
   ];
   (Gen.chordVoiced||[]).forEach((ch,i)=>{
-    ch.notes.forEach(n=> allNotes.push({ time:i*4, dur:3.8, midi:n, color:'#2d9d7855' }));
+    ch.notes.forEach(n=> allNotes.push({ time:i*4, dur:3.8, midi:n, color:'#2d9d7840', editable:false }));
   });
-  if(allNotes.length===0){
-    ctx.fillStyle='#555'; ctx.font='13px sans-serif';
-    ctx.fillText('Generate a progression to see the piano roll', 16, cssH/2);
-    return;
+
+  let minM=55, maxM=79;
+  const pitched = allNotes.length ? allNotes : [];
+  if(pitched.length){
+    minM=200; maxM=0;
+    pitched.forEach(n=>{ minM=Math.min(minM,n.midi); maxM=Math.max(maxM,n.midi); });
+    minM-=3; maxM+=3;
   }
-  let minM=200,maxM=0;
-  allNotes.forEach(n=>{ minM=Math.min(minM,n.midi); maxM=Math.max(maxM,n.midi); });
-  minM-=2; maxM+=2;
-  const noteH = cssH/(maxM-minM);
+  const noteH = Math.max(8, cssH/(maxM-minM));
   const beatW = 40;
-  // grid: bar lines
-  ctx.strokeStyle='#1a1a24'; ctx.lineWidth=1;
+  window._roll = { beatW, noteH, minM, maxM, cssH, cssW };
+
+  // octave grid lines + C labels
+  ctx.textBaseline='middle';
+  for(let m=minM; m<=maxM; m++){
+    const y = cssH-(m-minM)*noteH;
+    if(m%12===0){
+      ctx.strokeStyle='#1e1e2a'; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(cssW,y); ctx.stroke();
+      ctx.fillStyle='#444'; ctx.font='9px monospace'; ctx.fillText('C'+(Math.floor(m/12)-1), 2, y-4);
+    }
+  }
+  ctx.strokeStyle='#161620'; ctx.lineWidth=1;
   for(let b=0;b<=Transport.bars*4;b++){
     ctx.beginPath(); ctx.moveTo(b*beatW,0); ctx.lineTo(b*beatW,cssH);
-    ctx.strokeStyle = b%4===0 ? '#2a2a38' : '#161620';
+    ctx.strokeStyle = b%4===0 ? '#2a2a38' : '#141420';
     ctx.stroke();
+  }
+  if(allNotes.length===0){
+    ctx.fillStyle='#555'; ctx.font='13px sans-serif';
+    ctx.fillText('Tap a cell to add melody notes, or Generate an arrangement', 16, cssH/2);
   }
   allNotes.forEach(n=>{
     const y = cssH - (n.midi-minM)*noteH;
     ctx.fillStyle = n.color;
     ctx.fillRect(n.time*beatW+1, y-noteH+1, Math.max(2,n.dur*beatW-2), Math.max(2,noteH-2));
+    if(n.editable){ ctx.strokeStyle='#fff3'; ctx.strokeRect(n.time*beatW+1, y-noteH+1, Math.max(2,n.dur*beatW-2), Math.max(2,noteH-2)); }
   });
-  window._rollBeatW = beatW;
 }
 function updatePlayhead(beat){
   const canvas = document.getElementById('rollCanvas');
@@ -847,25 +988,48 @@ function updatePlayhead(beat){
     canvas.parentElement.style.position='relative';
     canvas.parentElement.appendChild(marker);
   }
-  const beatW = window._rollBeatW||40;
-  marker.style.left = (beat*beatW)+'px';
+  marker.style.left = (beat*(window._roll.beatW||40))+'px';
+}
+function handleRollTap(e){
+  const canvas = e.currentTarget;
+  const rect = canvas.getBoundingClientRect();
+  const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+  const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+  const x = clientX-rect.left, y = clientY-rect.top;
+  const { beatW, noteH, minM, cssH } = window._roll;
+  let time = Math.round((x/beatW)/0.25)*0.25;
+  const maxBeats = Transport.bars*4;
+  if(time<0 || time>=maxBeats) return;
+  const midi = Math.round(minM + (cssH-y)/noteH);
+  if(!Gen.melody) Gen.melody=[];
+  const idx = Gen.melody.findIndex(n=> n.midi===midi && time>=n.time && time<n.time+n.dur);
+  if(idx>=0){
+    Gen.melody.splice(idx,1);
+  } else {
+    Gen.melody.push({ time, midi, dur:0.25, vel:0.75 });
+    Gen.melody.sort((a,b)=>a.time-b.time);
+  }
+  drawPianoRoll();
 }
 
-/* ---------------- STEP SEQUENCER UI (drums) ---------------- */
+/* ---------------- DRUM GRID UI ---------------- */
 function renderSequencer(){
   const host = document.getElementById('seqHost');
   if(!host) return;
   host.innerHTML='';
   const insts = ['kick','snare','hat','clap'];
+  if(!Gen.drums || Object.keys(Gen.drums).length===0){
+    Gen.drums = {};
+    insts.forEach(inst=> Gen.drums[inst] = new Array(Transport.bars*16).fill(0));
+  }
   insts.forEach(inst=>{
     const row = document.createElement('div'); row.className='seq-row';
     const label = document.createElement('div'); label.className='seq-label'; label.textContent=inst;
     const cells = document.createElement('div'); cells.className='seq-cells';
-    const arr = (Gen.drums && Gen.drums[inst]) || new Array(Transport.bars*16).fill(0);
+    const arr = Gen.drums[inst] || new Array(Transport.bars*16).fill(0);
     arr.forEach((v,i)=>{
       const cell = document.createElement('div');
       cell.className = 'seq-cell'+(v?' active':'')+(i%4===0?' beat':'');
-      cell.dataset.inst=inst; cell.dataset.idx=i;
       cell.onclick = ()=>{
         Gen.drums[inst][i] = Gen.drums[inst][i]?0:1;
         cell.classList.toggle('active');
@@ -873,26 +1037,6 @@ function renderSequencer(){
       cells.appendChild(cell);
     });
     row.appendChild(label); row.appendChild(cells); host.appendChild(row);
-  });
-}
-
-/* ---------------- MIXER UI ---------------- */
-function renderMixer(){
-  const host = document.getElementById('mixerHost');
-  if(!host) return;
-  host.innerHTML='';
-  const tracks = [['chords','Chords'],['bass','Bass'],['melody','Melody'],['drums','Drums']];
-  tracks.forEach(([key,label])=>{
-    const row = document.createElement('div'); row.className='mixer-row';
-    const name = document.createElement('div'); name.className='mixer-name'; name.textContent=label;
-    const slider = document.createElement('input'); slider.type='range'; slider.min=0; slider.max=1; slider.step=0.01;
-    slider.value = mixerState[key].vol;
-    const val = document.createElement('div'); val.className='mixer-val'; val.textContent=Math.round(mixerState[key].vol*100);
-    slider.oninput=()=>{ mixerState[key].vol=parseFloat(slider.value); val.textContent=Math.round(slider.value*100); };
-    const mute = document.createElement('button'); mute.className='mute-btn'+(mixerState[key].mute?' on':''); mute.textContent='M';
-    mute.onclick=()=>{ mixerState[key].mute=!mixerState[key].mute; mute.classList.toggle('on'); };
-    row.appendChild(name); row.appendChild(slider); row.appendChild(val); row.appendChild(mute);
-    host.appendChild(row);
   });
 }
 
@@ -910,15 +1054,18 @@ function logMessage(msg){
 /* ---------------- TAB / VIEW WIRING ---------------- */
 const TABS = [
   { id:'generate', label:'Generate' },
-  { id:'roll',     label:'Piano Roll' },
-  { id:'sequencer',label:'Drum Grid' },
-  { id:'mixer',    label:'Mixer' },
+  { id:'roll',     label:'Roll & Drums' },
 ];
 let activeTab = 'generate';
+let uiState = { genre:'pop', key:'C', bars:8, chaos:0.15, useMarkov:true, melodyDensity:0.75, useCustomChords:false, customChordsText:'' };
 
 function buildChordSelectSummary(){
-  const names = ['I','ii','iii','IV','V','vi','vii°'];
-  return (Gen.progression||[]).map(c=>names[c.degree]).join(' – ');
+  if(!Gen.progression || !Gen.progression.length) return '';
+  if(Gen.progression[0].label !== undefined && Gen.progression[0].degree===null){
+    return Gen.progression.map(c=>c.label).join(' – ');
+  }
+  const labels = getRomanLabels(GENRES[uiState.genre]);
+  return Gen.progression.map(c=>labels[c.degree]).join(' – ');
 }
 
 function renderApp(){
@@ -938,12 +1085,35 @@ function renderApp(){
   main.appendChild(section);
 
   if(activeTab==='generate') renderGenerateTab(section);
-  if(activeTab==='roll') renderRollTab(section);
-  if(activeTab==='sequencer') renderSeqTab(section);
-  if(activeTab==='mixer') renderMixerTab(section);
+  if(activeTab==='roll') renderRollDrumsTab(section);
 }
 
-let uiState = { genre:'pop', key:'C', bars:8, chaos:0.15, useMarkov:true, melodyDensity:0.75 };
+function runGeneration(){
+  try{
+    Transport.bars = uiState.bars;
+    let customChords = null;
+    if(uiState.useCustomChords){
+      customChords = parseChordSequence(uiState.customChordsText);
+      if(!customChords.length){
+        logMessage('Custom chord sequence is empty or unrecognized — falling back to generated chords.');
+        customChords = null;
+      }
+    }
+    Gen.generateAll({
+      genreKey:uiState.genre, key:uiState.key, bars:uiState.bars, chaos:uiState.chaos,
+      useMarkov:uiState.useMarkov, melodyDensity:uiState.melodyDensity, customChords
+    });
+    const summary = buildChordSelectSummary();
+    logMessage(`Generated ${uiState.bars}-bar ${GENRES[uiState.genre].label} arrangement in ${uiState.key}: ${summary}`);
+    const summaryEl = document.getElementById('progSummary');
+    if(summaryEl) summaryEl.innerHTML = `<b style="color:var(--text)">Progression:</b> ${summary}`;
+    drawPianoRoll();
+    renderSequencer();
+  } catch(err){
+    logMessage('Generate failed: '+err.message);
+    console.error(err);
+  }
+}
 
 function renderGenerateTab(container){
   const p1 = document.createElement('div'); p1.className='panel';
@@ -986,56 +1156,79 @@ function renderGenerateTab(container){
   p2.querySelector('#densRange').oninput=e=>{ uiState.melodyDensity=parseFloat(e.target.value); p2.querySelector('#densVal').textContent=Math.round(uiState.melodyDensity*100)+'%'; };
   p2.querySelector('#bpmRange').oninput=e=>{ Transport.bpm=parseInt(e.target.value); p2.querySelector('#bpmVal').textContent=Transport.bpm+' BPM'; };
 
+  const p2b = document.createElement('div'); p2b.className='panel';
+  p2b.innerHTML = `<div class="panel-header">Custom Chord Sequence <span style="font-weight:400;text-transform:none;">optional</span></div>
+    <div class="field">
+      <label style="display:flex;align-items:center;text-transform:none;font-size:13px;color:var(--text);"><input type="checkbox" id="useCustomChk" ${uiState.useCustomChords?'checked':''} style="width:auto;min-height:auto;margin-right:8px;">Use my chord sequence instead of the generator</label>
+    </div>
+    <div class="field">
+      <textarea id="chordText" rows="2" placeholder="e.g. C G Am F   or   Cmaj7 Dm7 G7 Cmaj7" style="width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:9px 10px;font-size:13px;font-family:var(--mono);resize:vertical;">${uiState.customChordsText}</textarea>
+    </div>
+    <div class="field">
+      <input type="file" id="chordFile" accept=".txt,text/plain">
+    </div>
+    <div class="small-note">Root + quality, space or comma separated (maj, m, 7, maj7, m7, dim, sus4, 6, 9, etc). This still runs through the genre's bass, melody, and drum generation — only the harmony comes from your text.</div>`;
+  container.appendChild(p2b);
+  p2b.querySelector('#useCustomChk').onchange=e=>{ uiState.useCustomChords=e.target.checked; };
+  p2b.querySelector('#chordText').oninput=e=>{ uiState.customChordsText=e.target.value; };
+  p2b.querySelector('#chordFile').onchange=(e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      uiState.customChordsText = reader.result;
+      p2b.querySelector('#chordText').value = reader.result;
+      uiState.useCustomChords = true;
+      p2b.querySelector('#useCustomChk').checked = true;
+      logMessage(`Loaded chord sequence from ${file.name}.`);
+    };
+    reader.readAsText(file);
+  };
+
   const p3 = document.createElement('div'); p3.className='panel';
   p3.innerHTML = `<div class="panel-header">Generate</div>
     <div class="btn-row">
-      <button class="btn btn-primary" id="genBtn">⚡ Generate Arrangement</button>
+      <button class="btn btn-primary" id="genBtn" type="button">⚡ Generate Arrangement</button>
     </div>
-    <div class="small-note" id="progSummary">No progression generated yet.</div>`;
+    <div class="small-note" id="progSummary">${Gen.progression && Gen.progression.length ? ('<b style="color:var(--text)">Progression:</b> '+buildChordSelectSummary()) : 'No progression generated yet.'}</div>`;
   container.appendChild(p3);
-  p3.querySelector('#genBtn').onclick=()=>{
-    Transport.bars = uiState.bars;
-    Gen.generateAll({ genreKey:uiState.genre, key:uiState.key, bars:uiState.bars, chaos:uiState.chaos, useMarkov:uiState.useMarkov, melodyDensity:uiState.melodyDensity });
-    logMessage(`Generated ${uiState.bars}-bar ${GENRES[uiState.genre].label} progression in ${uiState.key}: ${buildChordSelectSummary()}`);
-    p3.querySelector('#progSummary').innerHTML = `<b style="color:var(--text)">Progression:</b> ${buildChordSelectSummary()}`;
-    drawPianoRoll();
-  };
+  const genBtn = p3.querySelector('#genBtn');
+  genBtn.addEventListener('click', runGeneration);
+  genBtn.addEventListener('touchend', function(ev){ ev.preventDefault(); runGeneration(); }, {passive:false});
 
   const p4 = document.createElement('div'); p4.className='panel';
   p4.innerHTML = `<div class="panel-header">Activity Log</div><div class="log-box" id="logBox"></div>`;
   container.appendChild(p4);
 }
 
-function renderRollTab(container){
+function renderRollDrumsTab(container){
   const p = document.createElement('div'); p.className='panel';
-  p.innerHTML = `<div class="panel-header">Piano Roll <span style="font-weight:400;text-transform:none;">melody / bass / chords</span></div>
+  p.innerHTML = `<div class="panel-header">Piano Roll <span style="font-weight:400;text-transform:none;">tap to add/remove melody notes</span></div>
     <div class="roll-wrap"><canvas id="rollCanvas"></canvas></div>`;
   container.appendChild(p);
-  requestAnimationFrame(drawPianoRoll);
-}
-function renderSeqTab(container){
-  const p = document.createElement('div'); p.className='panel';
-  p.innerHTML = `<div class="panel-header">Drum Grid <span style="font-weight:400;text-transform:none;">tap to edit</span></div>
+
+  const p2 = document.createElement('div'); p2.className='panel';
+  p2.innerHTML = `<div class="panel-header">Drum Grid <span style="font-weight:400;text-transform:none;">tap to edit</span></div>
     <div class="seq-grid-wrap" id="seqHost"></div>`;
-  container.appendChild(p);
-  renderSequencer();
-}
-function renderMixerTab(container){
-  const p = document.createElement('div'); p.className='panel';
-  p.innerHTML = `<div class="panel-header">Mixer</div><div id="mixerHost"></div>`;
-  container.appendChild(p);
-  renderMixer();
+  container.appendChild(p2);
+
+  requestAnimationFrame(()=>{
+    drawPianoRoll();
+    const canvas = document.getElementById('rollCanvas');
+    if(canvas){
+      canvas.addEventListener('click', handleRollTap);
+    }
+    renderSequencer();
+  });
 }
 
 /* ---------------- TRANSPORT WIRING ---------------- */
 document.getElementById('playBtn').onclick=()=>{
-  if(Transport.playing){ Transport.stop(); } else {
-    if(!Gen.progression || Gen.progression.length===0){
-      Gen.generateAll({ genreKey:uiState.genre, key:uiState.key, bars:uiState.bars, chaos:uiState.chaos, useMarkov:uiState.useMarkov, melodyDensity:uiState.melodyDensity });
-      Transport.bars = uiState.bars;
-    }
+  try{
+    if(Transport.playing){ Transport.stop(); return; }
+    if(!Gen.progression || Gen.progression.length===0){ runGeneration(); }
     Transport.start();
-  }
+  } catch(err){ logMessage('Playback failed: '+err.message); }
 };
 document.getElementById('stopBtn').onclick=()=>Transport.stop();
 document.getElementById('exportMidiBtn').onclick=()=>{
@@ -1048,6 +1241,31 @@ document.getElementById('exportWavBtn').onclick=async ()=>{
   await exportWAV();
   logMessage('Exported WAV file.');
 };
+
+/* ---------------- BACKGROUND / VISIBILITY HANDLING ----------------
+   Fixes playback silently dying after the tab/app is backgrounded: mobile
+   and desktop browsers suspend the AudioContext, and setInterval throttles,
+   so on return we explicitly resume audio and resync the scheduler window
+   rather than trying to flood-schedule everything that was missed. */
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden){ Transport.resyncOnResume(); }
+});
+window.addEventListener('focus', ()=> Transport.resyncOnResume());
+window.addEventListener('pageshow', ()=> Transport.resyncOnResume());
+
+/* ---------------- DOUBLE-TAP-ZOOM PREVENTION ----------------
+   Some mobile browsers still zoom on rapid double-tap even with
+   user-scalable=no in the viewport meta tag; guard against it directly. */
+let _lastTouchEnd = 0;
+document.addEventListener('touchend', function(e){
+  const now = Date.now();
+  if(now - _lastTouchEnd <= 350){ e.preventDefault(); }
+  _lastTouchEnd = now;
+}, { passive:false });
+document.addEventListener('dblclick', function(e){ e.preventDefault(); }, { passive:false });
+
+/* ---------------- GLOBAL ERROR SURFACE ---------------- */
+window.addEventListener('error', (e)=>{ try{ logMessage('Error: '+e.message); }catch(_){} });
 
 /* ---------------- INIT ---------------- */
 Transport.bpm = GENRES[uiState.genre].tempo;
