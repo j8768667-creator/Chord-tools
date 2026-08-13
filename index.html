@@ -21,8 +21,8 @@ body{display:flex;flex-direction:column;height:100dvh;}
 ::-webkit-scrollbar-thumb{background:#2a2a38;border-radius:3px;}
 
 /* header */
-.app-header{flex-shrink:0;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border);}
-.app-title{font-weight:700;font-size:15px;letter-spacing:.3px;}
+.app-header{flex-shrink:0;display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);}
+.app-title{font-weight:700;font-size:14px;letter-spacing:.3px;}
 .app-title span{color:var(--accent);}
 .header-spacer{flex:1;}
 .status-dot{width:8px;height:8px;border-radius:50%;background:#333;transition:background .2s;}
@@ -30,33 +30,37 @@ body{display:flex;flex-direction:column;height:100dvh;}
 
 /* tabs */
 .tab-bar{flex-shrink:0;display:flex;gap:2px;padding:0 8px;background:var(--panel);border-bottom:1px solid var(--border);overflow-x:auto;}
-.tab-btn{padding:10px 14px;font-size:12px;font-weight:600;color:var(--dim);white-space:nowrap;border-bottom:2px solid transparent;cursor:pointer;letter-spacing:.3px;text-transform:uppercase;}
+.tab-btn{padding:8px 12px;font-size:11px;font-weight:600;color:var(--dim);white-space:nowrap;border-bottom:2px solid transparent;cursor:pointer;letter-spacing:.3px;text-transform:uppercase;touch-action:manipulation;}
 .tab-btn.active{color:var(--accent);border-color:var(--accent);}
 
-/* main layout */
-.app-main{flex:1;min-height:0;overflow-y:auto;padding:14px;display:none;}
+/* main layout — #mainArea must itself be a constrained flex item (flex:1 +
+   min-height:0 + display:flex) so the .app-main scroll container inside it
+   has a bounded height to clip against; without this, block-level #mainArea
+   just grows to fit its content and scrolling never activates. */
+#mainArea{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
+.app-main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:12px;display:none;}
 .app-main.active{display:block;}
 
-.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;}
-.panel-header{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--dim);margin-bottom:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;}
+.panel-header{font-size:10px;text-transform:uppercase;letter-spacing:1.1px;color:var(--dim);margin-bottom:9px;font-weight:700;display:flex;justify-content:space-between;align-items:center;}
 
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
 @media(max-width:700px){.grid3{grid-template-columns:1fr 1fr;}}
 
-.field{margin-bottom:12px;}
-.field label{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;}
+.field{margin-bottom:9px;}
+.field label{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;}
 .field label b{color:var(--text);font-weight:600;}
-select,input[type=number],input[type=text],textarea{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:9px 10px;font-size:13px;min-height:40px;font-family:inherit;}
+select,input[type=number],input[type=text],textarea{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 9px;font-size:13px;min-height:36px;font-family:inherit;}
 select:focus,input:focus,textarea:focus{outline:none;border-color:var(--accent);}
-input[type=file]{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:7px;padding:8px;font-size:12px;}
+input[type=file]{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:7px;padding:7px;font-size:11px;}
 input[type=checkbox]{width:16px;height:16px;min-height:auto;accent-color:var(--accent);}
-input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:30px;touch-action:none;-webkit-user-drag:none;}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:26px;touch-action:none;-webkit-user-drag:none;}
 input[type=range]::-webkit-slider-runnable-track{height:4px;background:#22222e;border-radius:2px;}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;margin-top:-7px;height:18px;width:18px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent-glow);}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;margin-top:-7px;height:17px;width:17px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent-glow);}
 
-.chip-row{display:flex;flex-wrap:wrap;gap:6px;}
-.chip{background:var(--panel2);border:1px solid var(--border);color:var(--dim);padding:8px 12px;font-size:11px;font-weight:700;border-radius:20px;cursor:pointer;text-transform:uppercase;letter-spacing:.4px;}
+.chip-row{display:flex;flex-wrap:wrap;gap:5px;}
+.chip{background:var(--panel2);border:1px solid var(--border);color:var(--dim);padding:5px 9px;font-size:9.5px;font-weight:700;border-radius:14px;cursor:pointer;text-transform:uppercase;letter-spacing:.3px;touch-action:manipulation;}
 .chip.active{background:var(--accent);border-color:var(--accent);color:#0a0a0f;}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;font-size:13px;font-weight:700;min-height:44px;padding:0 16px;cursor:pointer;border:1px solid var(--border);background:var(--panel2);color:var(--text);transition:filter .1s,transform .1s;}
@@ -70,7 +74,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;margin-top:-7px;
 .btn-row .btn{flex:1;min-width:110px;}
 
 /* transport */
-.transport{position:sticky;bottom:0;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--panel);border-top:1px solid var(--border);}
+.transport{position:sticky;bottom:0;flex-shrink:0;display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--panel);border-top:1px solid var(--border);}
 .transport .btn{min-width:56px;}
 .time-display{font-family:var(--mono);font-size:13px;color:var(--dim);min-width:70px;text-align:center;}
 
@@ -98,7 +102,7 @@ canvas{display:block;}
 .mute-btn.on{background:var(--danger);border-color:var(--danger);color:#fff;}
 
 .log-box{font-family:var(--mono);font-size:11px;color:var(--dim);background:#08080d;border:1px solid var(--border);border-radius:8px;padding:8px 10px;height:100px;overflow-y:auto;line-height:1.5;}
-.small-note{font-size:11px;color:var(--dim);margin-top:6px;line-height:1.4;}
+.small-note{font-size:10px;color:var(--dim);margin-top:5px;line-height:1.35;}
 </style>
 </head>
 <body>
@@ -1140,16 +1144,18 @@ function renderGenerateTab(container){
         <input type="range" id="barsRange" min="4" max="16" step="4" value="${uiState.bars}">
       </div>
     </div>
-    <div class="field"><label>Chaos / Variation <b id="chaosVal">${Math.round(uiState.chaos*100)}%</b></label>
-      <input type="range" id="chaosRange" min="0" max="1" step="0.01" value="${uiState.chaos}">
-      <div class="small-note">Blends a Lorenz-attractor noise signal into the Markov chord walk and melody contour for controlled unpredictability.</div>
+    <div class="grid3">
+      <div class="field"><label>Chaos <b id="chaosVal">${Math.round(uiState.chaos*100)}%</b></label>
+        <input type="range" id="chaosRange" min="0" max="1" step="0.01" value="${uiState.chaos}">
+      </div>
+      <div class="field"><label>Density <b id="densVal">${Math.round(uiState.melodyDensity*100)}%</b></label>
+        <input type="range" id="densRange" min="0.2" max="1" step="0.01" value="${uiState.melodyDensity}">
+      </div>
+      <div class="field"><label>Tempo <b id="bpmVal">${Transport.bpm}</b></label>
+        <input type="range" id="bpmRange" min="50" max="180" step="1" value="${Transport.bpm}">
+      </div>
     </div>
-    <div class="field"><label>Melody Density <b id="densVal">${Math.round(uiState.melodyDensity*100)}%</b></label>
-      <input type="range" id="densRange" min="0.2" max="1" step="0.01" value="${uiState.melodyDensity}">
-    </div>
-    <div class="field"><label>Tempo <b id="bpmVal">${Transport.bpm} BPM</b></label>
-      <input type="range" id="bpmRange" min="50" max="180" step="1" value="${Transport.bpm}">
-    </div>`;
+    <div class="small-note">Chaos blends Lorenz-attractor noise into the Markov chord walk and melody contour.</div>`;
   container.appendChild(p2);
   p2.querySelector('#keySel').onchange=e=>uiState.key=e.target.value;
   p2.querySelector('#barsRange').oninput=e=>{ uiState.bars=parseInt(e.target.value); p2.querySelector('#barsVal').textContent=uiState.bars; };
@@ -1195,7 +1201,6 @@ function renderGenerateTab(container){
   container.appendChild(p3);
   const genBtn = p3.querySelector('#genBtn');
   genBtn.addEventListener('click', runGeneration);
-  genBtn.addEventListener('touchend', function(ev){ ev.preventDefault(); runGeneration(); }, {passive:false});
 
   const p4 = document.createElement('div'); p4.className='panel';
   p4.innerHTML = `<div class="panel-header">Activity Log</div><div class="log-box" id="logBox"></div>`;
@@ -1254,16 +1259,10 @@ document.addEventListener('visibilitychange', ()=>{
 window.addEventListener('focus', ()=> Transport.resyncOnResume());
 window.addEventListener('pageshow', ()=> Transport.resyncOnResume());
 
-/* ---------------- DOUBLE-TAP-ZOOM PREVENTION ----------------
-   Some mobile browsers still zoom on rapid double-tap even with
-   user-scalable=no in the viewport meta tag; guard against it directly. */
-let _lastTouchEnd = 0;
-document.addEventListener('touchend', function(e){
-  const now = Date.now();
-  if(now - _lastTouchEnd <= 350){ e.preventDefault(); }
-  _lastTouchEnd = now;
-}, { passive:false });
-document.addEventListener('dblclick', function(e){ e.preventDefault(); }, { passive:false });
+/* Double-tap-zoom prevention is handled purely via CSS (touch-action +
+   user-select + -webkit-touch-callout below) rather than a global JS
+   touchend/dblclick preventDefault — that approach was found to also
+   swallow the native scroll gesture on real touch devices. */
 
 /* ---------------- GLOBAL ERROR SURFACE ---------------- */
 window.addEventListener('error', (e)=>{ try{ logMessage('Error: '+e.message); }catch(_){} });
