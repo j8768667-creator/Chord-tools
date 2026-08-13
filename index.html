@@ -13,7 +13,8 @@
   --accent2:#2d9d78; --accent3:#4a6fd4; --danger:#d9455a; --mono:'SF Mono','Courier New',monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;-webkit-touch-callout:none;user-select:none;touch-action:manipulation;}
-input,select,textarea{-webkit-user-select:text;user-select:text;}
+input[type=text],input[type=number],textarea{-webkit-user-select:text;user-select:text;}
+input[type=range],input[type=checkbox],input[type=file],select{-webkit-user-select:none;-webkit-touch-callout:none;user-select:none;}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,'Inter',system-ui,sans-serif;overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none;}
 body{display:flex;flex-direction:column;height:100dvh;}
 ::-webkit-scrollbar{width:6px;height:6px;}
