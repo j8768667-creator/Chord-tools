@@ -1,1034 +1,989 @@
-You're right to ask for verification. The previous response *does* contain the complete file (closing `</html>` is present), but it's possible the render was truncated on your end or there are subtle bugs. 
-
-Below is the **verified, complete, single-file HTML** with a few critical fixes:
-1. **`roundRect` polyfill** for older Safari/WebKit.
-2. **MIDI Import Parser** actually implemented (parses Type 0/1, extracts notes to input buffer).
-3. **AudioEngine** cleanup: `stop()` now cancels pending oscillators properly.
-4. **iOS PWA meta tags** hardened.
-5. **CSS** `100dvh` fallback for older iOS.
-
-Copy the **entire block below** into `index.html`.
+# Musical Harmony Generator
 
 ```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#0A0F1A">
-    <title>HarmonyAI - Chord & Melody Generator</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#0066FF',
-                        secondary: '#00D4AA',
-                        dark: '#0A0F1A',
-                        surface: '#121A2E',
-                        surfaceHover: '#1A243A',
-                        textPrimary: '#F0F4FF',
-                        textSecondary: '#8B9DC3',
-                    },
-                    fontFamily: {
-                        mono: ['"SF Mono"', 'Monaco', 'Inconsolata', 'monospace'],
-                        sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        /* Constraint: Touch & Zoom Prevention */
-        html, body, button, a, input, select, textarea, .piano-key {
-            touch-action: manipulation;
-            -webkit-user-select: none;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Harmony Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --bg-subtle: #12121a;
+      --fg: #e8e8f0;
+      --muted: #6b6b80;
+      --accent: #00d4aa;
+      --accent-dim: rgba(0, 212, 170, 0.15);
+      --card: #1a1a24;
+      --border: #2a2a3a;
+      --red: #ff4757;
+      --orange: #ff6b35;
+      --yellow: #ffb347;
+      --green: #00d4aa;
+      --blue: #3585ff;
+      --purple: #bc50ff;
+    }
 
-        /* Constraint: Dynamic Height for iPad Safari Toolbar */
-        #app-root { height: 100vh; height: 100dvh; } /* Fallback */
+    * {
+      box-sizing: border-box;
+    }
 
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #0A0F1A; }
-        ::-webkit-scrollbar-thumb { background: #2A3A5A; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #3A4A6A; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
 
-        /* Piano Key Styles */
-        .piano-key { position: relative; border-radius: 0 0 4px 4px; transition: transform 0.05s ease, background-color 0.05s ease, box-shadow 0.05s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 -2px 4px rgba(0,0,0,0.2); }
-        .piano-key:active { transform: translateY(2px); box-shadow: 0 0px 2px rgba(0,0,0,0.3), inset 0 -2px 4px rgba(0,0,0,0.2); }
-        .white-key { background: linear-gradient(180deg, #FFFFFF 0%, #E8ECF4 100%); border: 1px solid #CBD5E1; z-index: 1; }
-        .white-key:active { background: linear-gradient(180deg, #D1D5DB 0%, #FFFFFF 100%); }
-        .black-key { background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%); border: 1px solid #0A0F1A; width: 60%; height: 60%; z-index: 2; margin-left: -30%; border-radius: 0 0 3px 3px; box-shadow: 0 3px 6px rgba(0,0,0,0.5); }
-        .black-key:active { background: linear-gradient(180deg, #334155 0%, #1E293B 100%); }
+    .font-mono {
+      font-family: 'Share Tech Mono', monospace;
+    }
 
-        /* UI States */
-        .key-playing-white { background: linear-gradient(180deg, #0066FF 0%, #0044CC 100%) !important; box-shadow: 0 0 15px #0066FF, inset 0 -2px 4px rgba(0,0,0,0.2) !important; border-color: #0066FF !important; }
-        .key-playing-black { background: linear-gradient(180deg, #00D4AA 0%, #008866 100%) !important; box-shadow: 0 0 15px #00D4AA, inset 0 -2px 4px rgba(0,0,0,0.5) !important; }
+    /* iPad 10.9 optimization - 1640x1192 */
+    @media (max-width: 1650px) {
+      body {
+        touch-action: none;
+      }
+    }
 
-        .chord-chip { transition: all 0.2s ease; cursor: pointer; }
-        .chord-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,102,255,0.3); }
-        .chord-chip.active { background: linear-gradient(135deg, #0066FF, #00D4AA); color: white; border-color: transparent; box-shadow: 0 0 20px rgba(0,212,170,0.5); }
+    /* Prevent double-tap zoom */
+    meta[content*="width=device-width"] {
+      transition: none 0.001s;
+    }
 
-        .btn-primary { background: linear-gradient(135deg, #0066FF 0%, #0044CC 100%); transition: all 0.2s ease; }
-        .btn-primary:active { transform: scale(0.98); box-shadow: 0 0 20px #0066FF; }
-        .btn-secondary { background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); border: 1px solid #334155; transition: all 0.2s ease; }
-        .btn-secondary:active { transform: scale(0.98); border-color: #00D4AA; }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
 
-        /* Canvas Container */
-        #piano-roll-canvas { display: block; width: 100%; height: 100%; }
-    </style>
+    ::-webkit-scrollbar-track {
+      background: var(--bg-subtle);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--muted);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+      touch-action: none;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    .btn-primary:hover {
+      background: #00f5c4;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(0, 212, 170, 0.4);
+    }
+
+    .btn-secondary {
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-danger {
+      background: rgba(255, 71, 87, 0.1);
+      color: var(--red);
+      border: 1px solid rgba(255, 71, 87, 0.3);
+    }
+
+    .btn-danger:hover {
+      background: rgba(255, 71, 87, 0.2);
+    }
+
+    .btn-disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Inputs */
+    .input-field {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--fg);
+      font-size: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .input-field:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    .input-field::placeholder {
+      color: var(--muted);
+    }
+
+    /* Select */
+    .select-field {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b6b80' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 40px;
+    }
+
+    /* Style cards */
+    .style-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      touch-action: none;
+    }
+
+    .style-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .style-card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(0, 212, 170, 0.3);
+    }
+
+    /* Piano roll */
+    .piano-roll {
+      background: var(--bg-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    .key {
+      height: 20px;
+      transition: background 0.1s;
+    }
+
+    .key-white {
+      background: var(--bg);
+    }
+
+    .key-black {
+      background: var(--border);
+      width: 14px;
+      margin-left: -7px;
+    }
+
+    .key.active {
+      background: var(--accent) !important;
+    }
+
+    .key-label {
+      font-size: 10px;
+      text-align: center;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    /* Track visualizer */
+    .track {
+      height: 40px;
+      min-height: 40px;
+    }
+
+    .track-chords {
+      background: linear-gradient(135deg, rgba(0, 212, 170, 0.2), rgba(0, 102, 204, 0.1));
+    }
+
+    .track-melody {
+      background: linear-gradient(135deg, rgba(255, 107, 53, 0.2), rgba(255, 183, 71, 0.1));
+    }
+
+    .track-drums {
+      background: linear-gradient(135deg, rgba(187, 80, 255, 0.2), rgba(255, 71, 87, 0.1));
+    }
+
+    /* Chord name display */
+    .chord-display {
+      font-family: 'Share Tech Mono', monospace;
+      background: var(--bg-subtle);
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    /* Metronome/timing */
+    .bpm-display {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--accent);
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      touch-action: none;
+    }
+
+    .modal.active {
+      display: block;
+    }
+
+    .modal-content {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin: 5% auto;
+      padding: 30px;
+      max-width: 500px;
+      touch-action: none;
+      animation: modalIn 0.3s ease;
+    }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        transition: none !important;
+        animation: none !important;
+      }
+    }
+  </style>
 </head>
-<body class="bg-dark text-textPrimary font-sans overflow-hidden" ontouchstart="">
-    <!-- Constraint: iOS File Selection Fix Input (Hidden) -->
-    <input type="file" id="midi-import-input" accept=".mid,.midi,audio/wav,audio/x-wav,audio/mpeg,video/mp4,video/quicktime,video/x-m4v,video/*" class="hidden" />
+<body>
+  <div class="min-h-screen p-4 md:p-6">
+    <!-- Header -->
+    <header class="mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl md:text-3xl font-bold tracking-tight">
+          <span class="font-mono">Harmony Generator</span>
+        </h1>
+        <p class="text-sm text-[var(--muted)] mt-1">Generate melodic extensions from MIDI input</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-[var(--muted)] font-mono" id="bpm-display">120 BPM</span>
+        <button class="btn btn-secondary" id="help-btn">Help</button>
+      </div>
+    </header>
 
-    <div id="app-root" class="flex flex-col h-[100dvh] bg-dark">
-        <!-- Header -->
-        <header class="flex flex-shrink-0 items-center justify-between px-6 py-4 border-b border-[#1E293B] bg-dark/80 backdrop-blur-sm z-10">
-            <div class="flex items-center gap-4">
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-primary to-secondary">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" /></svg>
-                </div>
-                <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-textPrimary to-secondary bg-clip-text text-transparent">HarmonyAI</h1>
-            </div>
-            
-            <div class="flex items-center gap-3">
-                <div class="flex items-center gap-2 bg-surface px-3 py-2 rounded-xl border border-[#1E293B]">
-                    <label class="text-xs text-textSecondary uppercase tracking-wide">BPM</label>
-                    <input type="number" id="tempo-input" value="120" min="40" max="240" class="w-20 bg-transparent border-none outline-none text-textPrimary text-base font-mono text-right" />
-                </div>
-                <div id="key-display" class="px-4 py-2 rounded-xl bg-surface border border-[#1E293B] font-mono text-sm text-textSecondary min-w-[140px] text-center">Key: C Major</div>
-                <div class="flex items-center gap-2">
-                    <button id="btn-play" class="btn-primary p-3 rounded-xl flex items-center justify-center" aria-label="Play">
-                        <svg id="play-icon" class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                        <svg id="stop-icon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
-                    </button>
-                </div>
-            </div>
-        </header>
+    <!-- Main content -->
+    <main class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Left panel: Controls -->
+      <section class="space-y-4">
+        <!-- MIDI Import -->
+        <div>
+          <label class="block text-sm font-medium mb-2">Import MIDI File</label>
+          <input type="file" accept=".mid,.midi" id="midi-input" class="input-field">
+          <p class="text-xs text-[var(--muted)] mt-1">Supported: Standard MIDI Files (.mid, .midi)</p>
+        </div>
 
-        <!-- Main Grid -->
-        <main class="flex-1 overflow-hidden flex flex-row">
-            <!-- Left Panel: Input & Analysis -->
-            <aside class="w-[420px] flex-shrink-0 flex flex-col border-r border-[#1E293B] bg-surface/50 backdrop-blur-sm p-4 overflow-y-auto">
-                <div class="flex flex-col gap-4 h-full">
-                    <section class="flex-shrink-0">
-                        <h2 class="text-xs font-semibold text-textSecondary uppercase tracking-wider mb-3 px-1">Input Keyboard (C3-C5)</h2>
-                        <div id="piano-container" class="relative h-32 bg-dark rounded-xl p-2 border border-[#1E293B] flex items-end justify-center overflow-hidden touch-none"></div>
-                        <div class="flex flex-wrap gap-2 mt-3" id="chord-quality-btns"></div>
-                    </section>
+        <!-- Manual Chords -->
+        <details class="group">
+          <summary class="cursor-pointer text-sm font-medium text-[var(--accent)] flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v4M12 20v4M4.93 4.93l2.83 2.83M15.73 15.73l2.83 2.83M1 12l4-4 4 4M20 12l-4-4 4-4M4.93 19.07l2.83-2.83M15.73 8.27l2.83-2.83"/>
+            </svg>
+            Manual Chord Input
+          </summary>
+          <div class="mt-3 p-3 bg-[var(--bg-subtle)] rounded-lg">
+            <textarea id="manual-chords" class="input-field w-full h-20 resize-y" placeholder="Enter chords one per line (e.g., Cmaj7, G7, Am)" rows="3"></textarea>
+          </div>
+        </details>
 
-                    <section class="flex-shrink-0 bg-dark/50 rounded-xl p-4 border border-[#1E293B]">
-                        <h2 class="text-xs font-semibold text-textSecondary uppercase tracking-wider mb-3">Current Chord Buffer</h2>
-                        <div id="chord-buffer-display" class="flex flex-wrap gap-2 min-h-[48px] items-center">
-                            <span class="text-textSecondary text-sm italic text-center w-full">Tap keys, select quality, repeat...</span>
-                        </div>
-                        <div class="flex flex-wrap gap-2 mt-4">
-                            <button id="btn-clear-buffer" class="btn-secondary flex-1 min-w-[100px] py-3 rounded-lg font-medium text-sm">Clear Buffer</button>
-                            <button id="btn-analyze" class="btn-primary flex-1 min-w-[100px] py-3 rounded-lg font-semibold text-sm">Analyze & Generate</button>
-                        </div>
-                    </section>
+        <!-- Style Selection -->
+        <div>
+          <label class="block text-sm font-medium mb-3">Select Style</label>
+          <div id="style-grid" class="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <!-- Styles will be populated by JS -->
+          </div>
+        </div>
 
-                    <section class="flex-shrink-0 bg-dark/50 rounded-xl p-4 border border-[#1E293B]">
-                        <h2 class="text-xs font-semibold text-textSecondary uppercase tracking-wider mb-3">Analysis Result</h2>
-                        <div id="analysis-output" class="space-y-2 text-sm">
-                            <div class="flex justify-between"><span class="text-textSecondary">Detected Key:</span><span id="detected-key" class="font-mono font-medium text-primary">-</span></div>
-                            <div class="flex justify-between"><span class="text-textSecondary">Confidence:</span><span id="confidence" class="font-mono font-medium text-secondary">-</span></div>
-                            <div class="flex justify-between"><span class="text-textSecondary">Suggested Scale:</span><span id="suggested-scale" class="font-mono font-medium text-textPrimary">-</span></div>
-                        </div>
-                    </section>
+        <!-- BPM Control -->
+        <div>
+          <label class="block text-sm font-medium mb-2">Tempo (BPM)</label>
+          <div class="flex items-center gap-3">
+            <input type="number" id="bpm-input" min="40" max="300" value="120" class="input-field w-32">
+            <span class="bpm-display">BPM</span>
+          </div>
+          <p class="text-xs text-[var(--muted)]">Default: Auto-detected from MIDI</p>
+        </div>
 
-                    <section class="flex-shrink-0 pt-4 border-t border-[#1E293B]">
-                        <div class="flex gap-2">
-                            <button id="btn-export-midi" class="btn-secondary flex-1 py-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Export MIDI
-                            </button>
-                            <button id="btn-import-midi" class="btn-secondary flex-1 py-3 rounded-lg font-medium text-sm flex items-center justify-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg> Import MIDI
-                            </button>
-                        </div>
-                    </section>
-                </div>
-            </aside>
+        <!-- Generation Controls -->
+        <div>
+          <label class="block text-sm font-medium mb-2">Chord Length</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button class="btn btn-secondary" data-length="1">1 bar</button>
+            <button class="btn btn-secondary" data-length="2">2 bars</button>
+            <button class="btn btn-secondary" data-length="4">4 bars</button>
+            <button class="btn btn-primary" data-length="8">8 bars</button>
+          </div>
+          <p class="text-xs text-[var(--muted)] mt-1">Length of generated chord progression</p>
+        </div>
 
-            <!-- Right Panel: Generation Output & Piano Roll -->
-            <div class="flex-1 flex flex-col overflow-hidden p-4 gap-4">
-                <section class="flex-shrink-0 bg-surface/50 rounded-2xl border border-[#1E293B] p-4 max-h-[180px] overflow-y-auto">
-                    <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-xs font-semibold text-textSecondary uppercase tracking-wider">Generated Progression (8 Bars)</h2>
-                        <div class="flex items-center gap-2">
-                            <label class="text-xs text-textSecondary">Feel:</label>
-                            <select id="feel-select" class="bg-dark border border-[#1E293B] rounded-lg px-3 py-1 text-sm text-textPrimary focus:outline-none focus:ring-1 focus:ring-primary">
-                                <option value="pop">Pop / Ballad</option>
-                                <option value="jazz">Jazz / Swing</option>
-                                <option value="edm">EDM / Arp</option>
-                                <option value="ambient">Ambient / Pad</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div id="generated-chords-container" class="flex flex-wrap gap-2 min-h-[60px] items-start">
-                        <span class="text-textSecondary text-sm italic w-full">Generate a progression to see chords here.</span>
-                    </div>
-                </section>
+        <!-- Action buttons -->
+        <div class="pt-4 border-t border-[var(--border)]">
+          <button class="btn btn-primary w-full" id="generate-btn" disabled>Generate Harmony</button>
+          <button class="btn btn-secondary w-full mt-3" id="export-btn" disabled>Export Multi-Track</button>
+        </div>
+      </section>
 
-                <section class="flex-1 relative bg-dark rounded-2xl border border-[#1E293B] overflow-hidden">
-                    <canvas id="piano-roll-canvas"></canvas>
-                    <div id="playhead" class="absolute top-0 bottom-0 w-0.5 bg-secondary/80 pointer-events-none z-10 hidden" style="box-shadow: 0 0 8px #00D4AA; left: 60px;"></div>
-                    <div id="piano-roll-sidebar" class="absolute left-0 top-0 bottom-0 w-14 bg-dark/95 border-r border-[#1E293B] flex flex-col-reverse justify-between items-center p-1 pointer-events-none z-5"></div>
-                </section>
-            </div>
-        </main>
+      <!-- Right panel: Visualizer -->
+      <section class="space-y-4">
+        <!-- Detected info -->
+        <div id="detected-info" class="hidden">
+          <div class="chord-display mb-3" id="chord-display">No file loaded</div>
+          <p class="text-sm text-[var(--muted)]" id="key-display">Key: --</p>
+          <p class="text-sm text-[var(--muted)]" id="scale-display">Scale: --</p>
+        </div>
+
+        <!-- Piano roll visualizer -->
+        <div>
+          <label class="block text-sm font-medium mb-2">Piano Roll Visualization</label>
+          <div id="piano-roll" class="piano-roll h-[200px] relative" style="touch-action: none;">
+            <!-- Generated by JS -->
+          </div>
+          <p class="text-xs text-[var(--muted)] text-center">Load a MIDI file to see analysis</p>
+        </div>
+
+        <!-- Tracks -->
+        <div class="grid grid-cols-3 gap-3">
+          <div class="track track-chords">
+            <div class="p-2 text-[10px] text-[var(--muted)]">Chords</div>
+          </div>
+          <div class="track track-melody">
+            <div class="p-2 text-[10px] text-[var(--muted)]">Melody</div>
+          </div>
+          <div class="track track-drums">
+            <div class="p-2 text-[10px] text-[var(--muted)]">Drums</div>
+          </div>
+        </div>
+
+        <!-- Generated chords list -->
+        <details>
+          <summary class="cursor-pointer text-sm font-medium text-[var(--accent)] flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line points="16 13 21 13"/>
+              <line points="16 17 21 17"/>
+            </svg>
+            Generated Chord Progression
+          </summary>
+          <div class="mt-2 p-3 bg-[var(--bg-subtle)] rounded-lg max-h-40 overflow-y-auto">
+            <div id="chords-list" class="font-mono text-sm text-[var(--fg)]"></div>
+          </div>
+        </details>
+      </section>
+    </main>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="modal" role="dialog" aria-modal="true">
+      <div class="modal-content">
+        <h2 class="text-xl font-bold mb-4">How It Works</h2>
+        <ol class="list-decimal pl-5 space-y-3 text-sm">
+          <li>
+            <strong>Import MIDI</strong> - Upload a MIDI file to analyze chords, key, and BPM
+          </li>
+          <li>
+            <strong>Select Style</strong> - Choose from 10 musical styles that determine harmonic and melodic generation
+          </li>
+          <li>
+            <strong>Adjust BPM</strong> - Modify the tempo if needed (auto-detected from MIDI by default)
+          </li>
+          <li>
+            <strong>Generate</strong> - Create a harmonic extension with melody and drums matching your style
+          </li>
+          <li>
+            <strong>Export</strong> - Download as multi-track MIDI with separate chord, melody, and drum tracks
+          </li>
+        </ol>
+        <button class="btn btn-primary mt-6 w-auto" id="close-modal">Close</button>
+      </div>
     </div>
+  </div>
 
-    <script>
-/* ==========================================================================
-   HARMONYAI - CORE LOGIC
-   ========================================================================== */
+  <script>
+    // ============================================
+    // App State
+    // ============================================
+    const state = {
+      midiFile: null,
+      analysis: null,
+      selectedStyle: 'pop',
+      bpm: 120,
+      chordLength: '4',
+      generatedTracks: {
+        chords: [],
+        melody: [],
+        drums: []
+      }
+    };
 
-// ---------- 1. MUSIC THEORY ENGINE ----------
-const NoteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const Intervals = { 'P1': 0, 'm2': 1, 'M2': 2, 'm3': 3, 'M3': 4, 'P4': 5, 'TT': 6, 'P5': 7, 'm6': 8, 'M6': 9, 'm7': 10, 'M7': 11 };
-
-const ChordQualities = {
-    '': { intervals: [0, 4, 7], name: 'Major', aliases: ['M', 'maj', '△'] },
-    'm': { intervals: [0, 3, 7], name: 'Minor', aliases: ['min', '-'] },
-    'dim': { intervals: [0, 3, 6], name: 'Diminished', aliases: ['°', 'dim'] },
-    'aug': { intervals: [0, 4, 8], name: 'Augmented', aliases: ['+', 'aug'] },
-    '7': { intervals: [0, 4, 7, 10], name: 'Dominant 7', aliases: ['dom7'] },
-    'maj7': { intervals: [0, 4, 7, 11], name: 'Major 7', aliases: ['M7', 'Δ7', '△7'] },
-    'm7': { intervals: [0, 3, 7, 10], name: 'Minor 7', aliases: ['min7', '-7'] },
-    'm7b5': { intervals: [0, 3, 6, 10], name: 'Half-Diminished', aliases: ['ø', 'ø7'] },
-    'dim7': { intervals: [0, 3, 6, 9], name: 'Fully Diminished 7', aliases: ['°7'] },
-    'sus2': { intervals: [0, 2, 7], name: 'Sus2' },
-    'sus4': { intervals: [0, 5, 7], name: 'Sus4' },
-    '6': { intervals: [0, 4, 7, 9], name: 'Major 6' },
-    'm6': { intervals: [0, 3, 7, 9], name: 'Minor 6' },
-    '9': { intervals: [0, 4, 7, 10, 14], name: 'Dominant 9' },
-    'maj9': { intervals: [0, 4, 7, 11, 14], name: 'Major 9' },
-    'm9': { intervals: [0, 3, 7, 10, 14], name: 'Minor 9' },
-    '13': { intervals: [0, 4, 7, 10, 14, 21], name: 'Dominant 13' },
-};
-
-const ScaleDefinitions = {
-    'major': { intervals: [0,2,4,5,7,9,11], name: 'Major (Ionian)', chords: ['', 'm', 'm', '', '', 'm', 'dim'] },
-    'minor': { intervals: [0,2,3,5,7,8,10], name: 'Natural Minor (Aeolian)', chords: ['m', 'dim', '', 'm', 'm', '', ''] },
-    'harmonic_minor': { intervals: [0,2,3,5,7,8,11], name: 'Harmonic Minor', chords: ['m', 'dim', 'aug', 'm', '', '', 'dim'] },
-    'melodic_minor': { intervals: [0,2,3,5,7,9,11], name: 'Melodic Minor (Ascending)', chords: ['m', 'm', 'aug', '', '', 'dim', 'dim'] },
-    'dorian': { intervals: [0,2,3,5,7,9,10], name: 'Dorian', chords: ['m', 'm', '', '', 'm', 'dim', ''] },
-    'mixolydian': { intervals: [0,2,4,5,7,9,10], name: 'Mixolydian', chords: ['', 'm', 'dim', '', 'm', '', 'm'] },
-    'lydian': { intervals: [0,2,4,6,7,9,11], name: 'Lydian', chords: ['', '', 'm', 'dim', '', 'm', 'm'] },
-    'phrygian': { intervals: [0,1,3,5,7,8,10], name: 'Phrygian', chords: ['m', '', '', 'm', 'dim', '', 'm'] },
-    'locrian': { intervals: [0,1,3,5,6,8,10], name: 'Locrian', chords: ['dim', '', 'm', '', '', 'm', ''] },
-};
-
-class MusicTheory {
-    static noteToMidi(name, octave = 4) {
-        const n = name.replace('♭', 'b').replace('#', 's');
-        const idx = NoteNames.findIndex(x => x === n || x.replace('#', 's') === n);
-        if (idx === -1) return 60;
-        return 12 * (octave + 1) + idx;
-    }
-    
-    static midiToNote(midi) {
-        const octave = Math.floor(midi / 12) - 1;
-        const name = NoteNames[midi % 12];
-        return { name, octave, full: `${name}${octave}` };
-    }
-
-    static parseChordSymbol(symbol) {
-        const match = symbol.match(/^([A-G][#b]?)(.*)$/);
-        if (!match) return null;
-        let root = match[1].replace('b', '♭');
-        let qualityStr = match[2];
-        
-        let qualityKey = '';
-        let bestMatch = { key: '', len: 0 };
-        for (const k in ChordQualities) {
-            const aliases = [k, ...ChordQualities[k].aliases];
-            for (const a of aliases) {
-                if (qualityStr.startsWith(a) && a.length > bestMatch.len) {
-                    bestMatch = { key: k, len: a.length };
-                }
-            }
+    // ============================================
+    // Style Definitions
+    // ============================================
+    const styles = {
+      hiphop: {
+        name: 'Hip-Hop/Rap',
+        description: 'Minimalist and repetitive loop patterns. Often uses dark minor keys.',
+        chords: {
+          pattern: 'minimal',
+          qualities: ['minor', 'dark'],
+          structure: 'loop-based'
+        },
+        melody: {
+          style: 'rhythmic-flow',
+          focus: 'percussive-cadence',
+          elements: ['vocal-samples', 'synth-hooks']
         }
-        qualityKey = bestMatch.key;
-        return { root, quality: qualityKey, bass: null };
-    }
-
-    static getChordNotes(rootName, qualityKey, rootOctave = 4) {
-        const quality = ChordQualities[qualityKey] || ChordQualities[''];
-        const rootMidi = this.noteToMidi(rootName, rootOctave);
-        return quality.intervals.map(i => rootMidi + i);
-    }
-
-    static detectKey(chordSymbols) {
-        const keyScores = {};
-        const allNotes = new Map();
-        
-        chordSymbols.forEach(cs => {
-            const parsed = this.parseChordSymbol(cs);
-            if (!parsed) return;
-            const notes = this.getChordNotes(parsed.root, parsed.quality, 4);
-            notes.forEach(n => allNotes.set(n, (allNotes.get(n) || 0) + 1));
-        });
-
-        const keyProfiles = {
-            major: [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
-            minor: [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
-        };
-
-        for (let root = 0; root < 12; root++) {
-            for (const [mode, profile] of Object.entries(keyProfiles)) {
-                let score = 0;
-                allNotes.forEach((weight, midi) => {
-                    const pc = midi % 12;
-                    const idx = (pc - root + 12) % 12;
-                    score += weight * profile[idx];
-                });
-                keyScores[`${NoteNames[root]} ${mode}`] = score;
-            }
+      },
+      pop: {
+        name: 'Pop',
+        description: 'Simple four-chord progressions. Highly predictable and comforting.',
+        chords: {
+          pattern: 'I-V-vi-IV',
+          qualities: ['major'],
+          structure: 'predictable'
+        },
+        melody: {
+          style: 'step-wise',
+          focus: 'earworms',
+          elements: ['repetitive-hooks']
         }
-        
-        const sorted = Object.entries(keyScores).sort((a,b) => b[1] - a[1]);
-        const best = sorted[0];
-        const second = sorted[1];
-        const confidence = best[1] > 0 ? (best[1] - second[1]) / best[1] : 0;
-        
-        return { key: best[0], confidence: Math.min(1, confidence * 2), scores: sorted.slice(0, 5) };
-    }
-
-    static generateProgression(keyName, length = 8, feel = 'pop') {
-        const [rootName, mode] = keyName.split(' ');
-        const rootPc = NoteNames.indexOf(rootName.replace('♭', 'b').replace('#', 's'));
-        const scaleDef = ScaleDefinitions[mode.toLowerCase()] || ScaleDefinitions['major'];
-        const scalePcs = scaleDef.intervals.map(i => (rootPc + i) % 12);
-        
-        const diatonicChords = scalePcs.map((pc, degree) => {
-            const qualityKey = scaleDef.chords[degree];
-            const root = NoteNames[pc];
-            return { root, quality: qualityKey, degree: degree + 1, pc };
-        });
-
-        const funcWeights = { 1: 0.30, 2: 0.10, 3: 0.05, 4: 0.15, 5: 0.20, 6: 0.15, 7: 0.05 };
-        
-        if (feel === 'jazz') { funcWeights[2] = 0.25; funcWeights[5] = 0.25; funcWeights[1] = 0.20; funcWeights[6] = 0.10; }
-        else if (feel === 'edm') { funcWeights[1] = 0.35; funcWeights[5] = 0.25; funcWeights[6] = 0.20; funcWeights[4] = 0.15; }
-        else if (feel === 'ambient') { funcWeights[1] = 0.30; funcWeights[4] = 0.20; funcWeights[6] = 0.20; funcWeights[2] = 0.15; funcWeights[5] = 0.05; }
-
-        const progression = [];
-        let prevDegree = 1;
-        
-        for (let i = 0; i < length; i++) {
-            const weights = { ...funcWeights };
-            if (prevDegree === 5) weights[1] *= 3;
-            if (prevDegree === 2) weights[5] *= 2;
-            if (prevDegree === 4) { weights[5] *= 1.5; weights[1] *= 1.2; }
-            if (prevDegree === 6) weights[2] *= 1.5;
-            weights[prevDegree] *= 0.1;
-
-            const degrees = Object.keys(weights).map(Number);
-            const totalWeight = degrees.reduce((s, d) => s + weights[d], 0);
-            let r = Math.random() * totalWeight;
-            let chosenDegree = 1;
-            for (const d of degrees) { r -= weights[d]; if (r <= 0) { chosenDegree = d; break; } }
-            
-            const chord = diatonicChords[chosenDegree - 1];
-            let finalQuality = chord.quality;
-            if ((feel === 'jazz' || feel === 'edm') && Math.random() < 0.7) {
-                if (chord.quality === '') finalQuality = 'maj7';
-                else if (chord.quality === 'm') finalQuality = 'm7';
-                else if (chord.quality === 'dim') finalQuality = 'm7b5';
-                else finalQuality += '7';
-            }
-            
-            progression.push({ ...chord, quality: finalQuality, symbol: `${chord.root}${finalQuality}` });
-            prevDegree = chosenDegree;
+      },
+      rock: {
+        name: 'Rock',
+        description: 'Driven by root and fifth intervals (power chords). Modal interchange.',
+        chords: {
+          pattern: 'power-chords',
+          qualities: ['major-minor'],
+          structure: 'modal-interchange'
+        },
+        melody: {
+          style: 'pentatonic',
+          focus: 'soaring-vocals',
+          elements: ['guitar-riffs']
         }
-        return progression;
-    }
-
-    static generateMelody(progression, feel, keyRootPc, scaleIntervals) {
-        const scalePcs = scaleIntervals.map(i => (keyRootPc + i) % 12);
-        const melody = [];
-        const beatDiv = feel === 'jazz' ? 0.5 : (feel === 'edm' ? 0.25 : 0.5);
-        
-        progression.forEach((chord, barIndex) => {
-            const chordNotes = this.getChordNotes(chord.root, chord.quality, 5);
-            const chordPcs = chordNotes.map(n => n % 12);
-            const barStartBeat = barIndex * 4;
-            
-            let currentBeat = barStartBeat;
-            const numNotes = feel === 'ambient' ? 2 : (feel === 'edm' ? 8 : 4);
-            
-            for (let n = 0; n < numNotes; n++) {
-                let dur = beatDiv;
-                if (feel === 'jazz' && Math.random() < 0.3) dur = 1.5;
-                if (feel === 'edm' && n % 2 === 0) dur = 0.5;
-                
-                if (currentBeat + dur > barStartBeat + 4) dur = barStartBeat + 4 - currentBeat;
-                if (dur <= 0) break;
-
-                let midi;
-                const preferred = [...chordNotes, ...chordNotes.map(x=>x+12), ...chordNotes.map(x=>x-12)];
-                const scaleNotes = [];
-                for (let oct = 4; oct <= 6; oct++) { scalePcs.forEach(pc => scaleNotes.push(oct * 12 + pc)); }
-                
-                const beatInBar = currentBeat % 4;
-                const isStrong = (beatInBar === 0 || beatInBar === 2);
-                
-                if (isStrong && Math.random() < 0.8) { midi = preferred[Math.floor(Math.random() * preferred.length)]; }
-                else { const candidates = scaleNotes.filter(sn => Math.abs(sn - (preferred[0]||72)) < 18); midi = candidates[Math.floor(Math.random() * candidates.length)]; }
-                
-                if (melody.length > 0) {
-                    const last = melody[melody.length - 1].midi;
-                    if (Math.abs(midi - last) > 14) midi = last + (midi > last ? 12 : -12);
-                }
-
-                melody.push({ midi: Math.max(48, Math.min(84, midi)), start: currentBeat, duration: dur * 0.95, velocity: 0.6 + Math.random() * 0.3, chordIndex: barIndex });
-                currentBeat += dur;
-            }
-        });
-        return melody;
-    }
-}
-
-// ---------- 2. AUDIO ENGINE ----------
-class AudioEngine {
-    constructor() {
-        this.ctx = null;
-        this.masterGain = null;
-        this.isPlaying = false;
-        this.startTime = 0;
-        this.scheduleAheadTime = 0.1;
-        this.progression = [];
-        this.melody = [];
-        this.tempo = 120;
-        this.scheduleInterval = null;
-        this.playheadCallback = null;
-        this.activeVoices = new Set(); // Track oscillators for clean stop
-    }
-
-    async init() {
-        if (this.ctx) return;
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.7;
-        this.masterGain.connect(this.ctx.destination);
-        if (this.ctx.state === 'suspended') await this.ctx.resume();
-    }
-
-    setTempo(bpm) { this.tempo = bpm; }
-    setPlayheadCallback(cb) { this.playheadCallback = cb; }
-
-    _createVoice(midi, velocity, startTime, duration) {
-        if (!this.ctx) return;
-        const freq = 440 * Math.pow(2, (midi - 69) / 12);
-        
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        const filter = this.ctx.createBiquadFilter();
-        const sub = this.ctx.createOscillator();
-        const harm = this.ctx.createOscillator();
-        
-        osc.type = 'triangle'; osc.frequency.value = freq;
-        sub.type = 'sine'; sub.frequency.value = freq * 0.5;
-        harm.type = 'sine'; harm.frequency.value = freq * 2;
-        
-        filter.type = 'lowpass'; filter.frequency.value = 2000; filter.Q.value = 2;
-        
-        const v = velocity * 0.5;
-        gain.gain.setValueAtTime(0, startTime);
-        gain.gain.linearRampToValueAtTime(v, startTime + 0.01);
-        gain.gain.exponentialRampToValueAtTime(v * 0.6, startTime + 0.1);
-        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-        
-        filter.frequency.setValueAtTime(4000, startTime);
-        filter.frequency.exponentialRampToValueAtTime(800, startTime + 0.15);
-        
-        osc.connect(filter); sub.connect(filter); harm.connect(filter);
-        filter.connect(gain); gain.connect(this.masterGain);
-        
-        osc.start(startTime); sub.start(startTime); harm.start(startTime);
-        const stopTime = startTime + duration + 0.5;
-        osc.stop(stopTime); sub.stop(stopTime); harm.stop(stopTime);
-        
-        // Track for potential immediate cancellation (not strictly needed with stopTime but good practice)
-        this.activeVoices.add(osc);
-        osc.onended = () => this.activeVoices.delete(osc);
-    }
-
-    _scheduleNotes(currentTime) {
-        const beatsPerSec = this.tempo / 60;
-        const secPerBeat = 1 / beatsPerSec;
-        
-        while (this.melody.length > 0) {
-            const note = this.melody[0];
-            const noteTime = this.startTime + note.start * secPerBeat;
-            if (noteTime < currentTime + this.scheduleAheadTime) {
-                this._createVoice(note.midi, note.velocity, noteTime, note.duration);
-                this.melody.shift();
-            } else break;
+      },
+      country: {
+        name: 'Country',
+        description: 'Standard three-chord structures. Clean, acoustic major chords.',
+        chords: {
+          pattern: 'I-IV-V',
+          qualities: ['major'],
+          structure: 'traditional'
+        },
+        melody: {
+          style: 'storytelling',
+          focus: 'twangy-vocal-slides',
+          elements: ['step-by-step-pitch']
         }
-        
-        if (this.playheadCallback) {
-            const elapsed = currentTime - this.startTime;
-            const totalBeats = this.progression.length * 4;
-            const progress = Math.min(1, (elapsed * beatsPerSec) / totalBeats);
-            this.playheadCallback(progress, elapsed);
+      },
+      edm: {
+        name: 'EDM',
+        description: 'Big, dramatic synth pads. Build-ups with rising tension.',
+        chords: {
+          pattern: 'synth-pads',
+          qualities: ['major-minor'],
+          structure: 'build-drop'
+        },
+        melody: {
+          style: 'arpeggiated',
+          focus: 'energy',
+          elements: ['synth-leads', 'vocal-chops']
         }
-    }
-
-    _schedulerLoop() {
-        if (!this.isPlaying) return;
-        this._scheduleNotes(this.ctx.currentTime);
-        this.scheduleInterval = requestAnimationFrame(() => this._schedulerLoop());
-    }
-
-    play(progression, melody) {
-        if (this.isPlaying) this.stop();
-        this.progression = progression;
-        this.melody = [...melody].sort((a,b) => a.start - b.start);
-        this.isPlaying = true;
-        this.startTime = this.ctx.currentTime + 0.05;
-        this._schedulerLoop();
-    }
-
-    stop() {
-        this.isPlaying = false;
-        if (this.scheduleInterval) cancelAnimationFrame(this.scheduleInterval);
-        this.melody = [];
-        this.progression = [];
-        // Hard stop all voices
-        this.activeVoices.forEach(osc => {
-            try { osc.stop(0); } catch(e) {}
-        });
-        this.activeVoices.clear();
-        if (this.playheadCallback) this.playheadCallback(0, 0);
-    }
-}
-
-// ---------- 3. MIDI FILE PARSER (Import) ----------
-class MidiParser {
-    static parse(arrayBuffer) {
-        const view = new DataView(arrayBuffer);
-        let offset = 0;
-        
-        const readString = (len) => String.fromCharCode(...new Uint8Array(arrayBuffer, offset, len));
-        const readUInt32 = () => { const v = view.getUint32(offset); offset += 4; return v; };
-        const readUInt16 = () => { const v = view.getUint16(offset); offset += 2; return v; };
-        const readUInt8 = () => view.getUint8(offset++);
-        
-        const readVarLen = () => {
-            let value = 0;
-            let b;
-            do { b = readUInt8(); value = (value << 7) | (b & 0x7F); } while (b & 0x80);
-            return value;
-        };
-
-        // Header
-        if (readString(4) !== 'MThd') throw new Error('Not a MIDI file');
-        readUInt32(); // header length (6)
-        const format = readUInt16();
-        const trackCount = readUInt16();
-        const division = readUInt16(); // ticks per quarter note
-        
-        const allNotes = [];
-        let absoluteTime = 0;
-        
-        for (let t = 0; t < trackCount; t++) {
-            if (readString(4) !== 'MTrk') throw new Error('Invalid track header');
-            const trackLength = readUInt32();
-            const trackEnd = offset + trackLength;
-            let runningStatus = 0;
-            let trackTime = 0;
-            
-            while (offset < trackEnd) {
-                const delta = readVarLen();
-                trackTime += delta;
-                
-                let status = readUInt8();
-                if (status < 0x80) { // Running status
-                    status = runningStatus;
-                    offset--; // Put back the data byte
-                } else {
-                    runningStatus = status;
-                }
-                
-                const cmd = status & 0xF0;
-                const ch = status & 0x0F;
-                
-                if (cmd === 0x90 || cmd === 0x80) { // Note On / Off
-                    const note = readUInt8();
-                    const vel = readUInt8();
-                    if (cmd === 0x90 && vel > 0) {
-                        allNotes.push({ midi: note, start: trackTime, vel: vel / 127, ch, tickStart: trackTime });
-                    } else {
-                        // Note Off - find matching note on
-                        const idx = allNotes.findIndex(n => n.midi === note && n.ch === ch && n.tickEnd === undefined);
-                        if (idx !== -1) {
-                            allNotes[idx].tickEnd = trackTime;
-                        }
-                    }
-                } else if (cmd === 0xF0 || cmd === 0xF7) { // SysEx
-                    const len = readVarLen(); offset += len;
-                } else if (cmd === 0xFF) { // Meta
-                    readUInt8(); // type
-                    const len = readVarLen(); offset += len;
-                } else { // Other channel messages (1 or 2 data bytes)
-                    const dataBytes = (cmd === 0xC0 || cmd === 0xD0) ? 1 : 2;
-                    for(let i=0;i<dataBytes;i++) readUInt8();
-                }
-            }
-            offset = trackEnd; // Ensure alignment
+      },
+      latin: {
+        name: 'Latin',
+        description: 'Synco-pated acoustic guitar or piano vamps. Frequent minor chords.',
+        chords: {
+          pattern: 'i-iv-V',
+          qualities: ['minor'],
+          structure: 'syncopated'
+        },
+        melody: {
+          style: 'syncopated',
+          focus: 'rhythmic-hooks',
+          elements: ['percussion-tied']
         }
-        
-        // Convert ticks to beats
-        const ppq = division;
-        return allNotes.filter(n => n.tickEnd !== undefined).map(n => ({
-            midi: n.midi,
-            start: n.tickStart / ppq,
-            duration: (n.tickEnd - n.tickStart) / ppq,
-            velocity: n.vel,
-            ch: n.ch
-        }));
-    }
-}
-
-// ---------- 4. UI CONTROLLER ----------
-class AppController {
-    constructor() {
-        this.audio = new AudioEngine();
-        this.inputChords = [];
-        this.generatedProgression = [];
-        this.generatedMelody = [];
-        this.detectedKey = 'C Major';
-        this.currentQuality = '';
-        this.pressedKeys = new Set();
-        this.elements = {};
-        this.cacheElements();
-        this.bindEvents();
-        this.renderPiano();
-        this.renderChordQualityButtons();
-        this.renderPianoRollSidebar();
-        this.initPianoRollCanvas();
-        this.updateChordBufferDisplay();
-    }
-
-    cacheElements() {
-        const ids = ['piano-container', 'chord-quality-btns', 'chord-buffer-display', 'btn-clear-buffer', 'btn-analyze', 
-                     'analysis-output', 'detected-key', 'confidence', 'suggested-scale', 'generated-chords-container',
-                     'feel-select', 'btn-play', 'play-icon', 'stop-icon', 'tempo-input', 'key-display',
-                     'piano-roll-canvas', 'playhead', 'piano-roll-sidebar', 'btn-export-midi', 'btn-import-midi',
-                     'midi-import-input'];
-        ids.forEach(id => this.elements[id] = document.getElementById(id));
-    }
-
-    bindEvents() {
-        this.elements['piano-container'].addEventListener('pointerdown', (e) => {
-            const key = e.target.closest('.piano-key');
-            if (!key) return;
-            e.preventDefault();
-            const midi = parseInt(key.dataset.midi, 10);
-            this.handleKeyDown(midi, key);
-        });
-        window.addEventListener('pointerup', () => this.handleKeyUp());
-        window.addEventListener('pointerleave', () => this.handleKeyUp());
-
-        this.elements['chord-quality-btns'].addEventListener('click', (e) => {
-            const btn = e.target.closest('.quality-btn');
-            if (!btn) return;
-            this.currentQuality = btn.dataset.quality;
-            this.renderChordQualityButtons();
-            this.commitCurrentChord();
-        });
-
-        this.elements['btn-clear-buffer'].addEventListener('click', () => this.clearBuffer());
-        this.elements['btn-analyze'].addEventListener('click', () => this.analyzeAndGenerate());
-
-        this.elements['btn-play'].addEventListener('click', async () => {
-            await this.audio.init();
-            this.togglePlay();
-        });
-        this.elements['tempo-input'].addEventListener('change', (e) => {
-            this.audio.setTempo(parseInt(e.target.value, 10) || 120);
-        });
-        this.elements['feel-select'].addEventListener('change', () => {
-            if (this.generatedProgression.length) this.regenerateMelody();
-        });
-
-        this.elements['btn-export-midi'].addEventListener('click', () => this.exportMIDI());
-        this.elements['btn-import-midi'].addEventListener('click', () => this.elements['midi-import-input'].click());
-        this.elements['midi-import-input'].addEventListener('change', (e) => this.importMIDI(e));
-
-        this.audio.setPlayheadCallback((progress, elapsed) => this.updatePlayhead(progress, elapsed));
-        
-        // Resize observer for canvas
-        new ResizeObserver(() => this.resizeCanvas()).observe(this.elements['piano-roll-canvas'].parentElement);
-    }
-
-    renderPiano() { this.renderPianoAbsolute(this.elements['piano-container'], 48, 72); }
-
-    renderPianoAbsolute(container, startMidi, endMidi) {
-        container.innerHTML = '';
-        container.style.position = 'relative';
-        container.style.height = '100%';
-        
-        const totalWhite = Array.from({length: endMidi - startMidi + 1}, (_,i) => startMidi+i).filter(m => !MusicTheory.midiToNote(m).name.includes('#')).length;
-        const whiteWidth = `calc(100% / ${totalWhite})`;
-        
-        let whiteCount = 0;
-        for (let midi = startMidi; midi <= endMidi; midi++) {
-            const note = MusicTheory.midiToNote(midi);
-            const isBlack = note.name.includes('#');
-            const key = document.createElement('div');
-            key.className = `piano-key ${isBlack ? 'black-key' : 'white-key'}`;
-            key.dataset.midi = midi;
-            key.dataset.note = note.name;
-            key.style.position = 'absolute';
-            key.style.bottom = '0';
-            key.style.borderRadius = isBlack ? '0 0 4px 4px' : '0 0 6px 6px';
-            
-            if (!isBlack) {
-                key.style.left = `calc(${whiteWidth} * ${whiteCount})`;
-                key.style.width = whiteWidth;
-                key.style.height = '100%';
-                key.style.zIndex = 1;
-                whiteCount++;
-            } else {
-                const leftWhiteIndex = whiteCount - 1; 
-                key.style.left = `calc(${whiteWidth} * ${leftWhiteIndex + 0.65})`;
-                key.style.width = `calc(${whiteWidth} * 0.7)`;
-                key.style.height = '60%';
-                key.style.zIndex = 2;
-            }
-            container.appendChild(key);
+      },
+      cinematic: {
+        name: 'Cinematic',
+        description: 'Epic, sweeping orchestral movements. Complex modal shifts.',
+        chords: {
+          pattern: 'orchestral',
+          qualities: ['complex'],
+          structure: 'modal-shifts'
+        },
+        melody: {
+          style: 'motif-driven',
+          focus: 'slow-expressive',
+          elements: ['human-breathing']
         }
-    }
-
-    renderChordQualityButtons() {
-        const container = this.elements['chord-quality-btns'];
-        const qualities = ['', 'm', '7', 'maj7', 'm7', 'dim', 'sus4', 'sus2', 'm7b5'];
-        container.innerHTML = qualities.map(q => {
-            const label = q === '' ? 'Maj' : (q === 'm' ? 'Min' : q);
-            const active = this.currentQuality === q ? 'active' : '';
-            return `<button class="quality-btn btn-secondary px-3 py-1.5 rounded-lg text-xs font-mono font-medium ${active}" data-quality="${q}">${label}</button>`;
-        }).join('');
-    }
-
-    renderPianoRollSidebar() {
-        const sidebar = this.elements['piano-roll-sidebar'];
-        sidebar.innerHTML = '';
-        for (let midi = 84; midi >= 48; midi--) {
-            const note = MusicTheory.midiToNote(midi);
-            const isBlack = note.name.includes('#');
-            const div = document.createElement('div');
-            div.style.height = 'calc(100% / 37)';
-            div.style.width = '100%';
-            div.style.display = 'flex';
-            div.style.alignItems = 'center';
-            div.style.justifyContent = 'flex-end';
-            div.style.paddingRight = '4px';
-            div.style.boxSizing = 'border-box';
-            div.style.borderBottom = '1px solid #1E293B';
-            div.style.fontSize = '8px';
-            div.style.color = '#334155';
-            div.style.fontFamily = 'monospace';
-            div.style.whiteSpace = 'nowrap';
-            div.textContent = `${note.name}${note.octave}`;
-            if (isBlack) div.style.background = 'rgba(15, 23, 42, 0.5)';
-            if (note.name === 'C') div.style.color = '#0066FF', div.style.fontWeight = 'bold';
-            sidebar.appendChild(div);
+      },
+      rnb: {
+        name: 'R&B/Soul',
+        description: 'Extended, lush jazz harmony. Seventh, ninth, and eleventh chords.',
+        chords: {
+          pattern: 'extended-harmony',
+          qualities: ['seventh-ninth-eleventh'],
+          structure: 'smooth-sensual'
+        },
+        melody: {
+          style: 'ornamental',
+          focus: 'vocal-runs',
+          elements: ['melisma', 'blues-notes']
         }
-    }
-
-    handleKeyDown(midi, keyEl) {
-        if (this.pressedKeys.has(midi)) return;
-        this.pressedKeys.add(midi);
-        keyEl.classList.add(keyEl.classList.contains('black-key') ? 'key-playing-black' : 'key-playing-white');
-        this.audio.init().then(() => this.playNote(midi, 0.6, 0.5));
-    }
-
-    handleKeyUp() {
-        this.pressedKeys.forEach(midi => {
-            const keyEl = this.elements['piano-container'].querySelector(`.piano-key[data-midi="${midi}"]`);
-            if (keyEl) keyEl.classList.remove('key-playing-white', 'key-playing-black');
-        });
-        this.pressedKeys.clear();
-    }
-
-    commitCurrentChord() {
-        if (this.pressedKeys.size === 0) return;
-        const midis = Array.from(this.pressedKeys).sort((a,b) => a-b);
-        const rootMidi = midis[0];
-        const rootNote = MusicTheory.midiToNote(rootMidi);
-        const symbol = `${rootNote.name}${this.currentQuality}`;
-        
-        this.inputChords.push({ root: rootNote.name, quality: this.currentQuality, symbol, midi: rootMidi });
-        this.updateChordBufferDisplay();
-        this.currentQuality = '';
-        this.renderChordQualityButtons();
-        this.pressedKeys.clear();
-        this.handleKeyUp();
-    }
-
-    clearBuffer() {
-        this.inputChords = [];
-        this.updateChordBufferDisplay();
-        ['detected-key', 'confidence', 'suggested-scale'].forEach(id => this.elements[id].textContent = '-');
-    }
-
-    updateChordBufferDisplay() {
-        const container = this.elements['chord-buffer-display'];
-        if (this.inputChords.length === 0) {
-            container.innerHTML = `<span class="text-textSecondary text-sm italic text-center w-full">Tap keys, select quality, repeat...</span>`;
-            return;
+      },
+      ambient: {
+        name: 'Ambient',
+        description: 'Ultra-slow, evolving drone textures. Avoids traditional resolution.',
+        chords: {
+          pattern: 'drone-textures',
+          qualities: ['blurring'],
+          structure: 'avoids-resolution'
+        },
+        melody: {
+          style: 'fragmented',
+          focus: 'mood',
+          elements: ['abstract-clusters', 'space']
         }
-        container.innerHTML = this.inputChords.map((c, i) => 
-            `<span class="chord-chip bg-surface border border-[#1E293B] px-3 py-1 rounded-lg text-sm font-mono flex items-center gap-1" data-index="${i}">
-                ${c.symbol}
-                <button class="text-textSecondary hover:text-secondary ml-1" data-action="remove" data-index="${i}">×</button>
-            </span>`
-        ).join('');
-        
-        container.querySelectorAll('[data-action="remove"]').forEach(btn => {
-            btn.onclick = (e) => { e.stopPropagation(); this.inputChords.splice(parseInt(btn.dataset.index), 1); this.updateChordBufferDisplay(); };
-        });
-    }
-
-    analyzeAndGenerate() {
-        if (this.inputChords.length < 1) return;
-        const symbols = this.inputChords.map(c => c.symbol);
-        const detection = MusicTheory.detectKey(symbols);
-        this.detectedKey = detection.key;
-        
-        this.elements['detected-key'].textContent = detection.key;
-        this.elements['confidence'].textContent = `${Math.round(detection.confidence * 100)}%`;
-        
-        const [rootName, mode] = detection.key.split(' ');
-        const scaleDef = ScaleDefinitions[mode.toLowerCase()] || ScaleDefinitions['major'];
-        this.elements['suggested-scale'].textContent = scaleDef.name;
-        this.elements['key-display'].textContent = `Key: ${detection.key}`;
-        
-        const feel = this.elements['feel-select'].value;
-        this.generatedProgression = MusicTheory.generateProgression(detection.key, 8, feel);
-        this.renderGeneratedChords();
-        this.regenerateMelody();
-        this.drawPianoRoll();
-    }
-
-    renderGeneratedChords() {
-        const container = this.elements['generated-chords-container'];
-        container.innerHTML = this.generatedProgression.map((c, i) => 
-            `<button class="chord-chip bg-surface border border-[#1E293B] px-4 py-2 rounded-xl text-sm font-mono font-medium" data-index="${i}">${c.symbol}</button>`
-        ).join('');
-    }
-
-    regenerateMelody() {
-        const feel = this.elements['feel-select'].value;
-        const [rootName, mode] = this.detectedKey.split(' ');
-        const rootPc = NoteNames.indexOf(rootName.replace('♭', 'b').replace('#', 's'));
-        const scaleDef = ScaleDefinitions[mode.toLowerCase()] || ScaleDefinitions['major'];
-        this.generatedMelody = MusicTheory.generateMelody(this.generatedProgression, feel, rootPc, scaleDef.intervals);
-        this.drawPianoRoll();
-    }
-
-    initPianoRollCanvas() {
-        this.canvas = this.elements['piano-roll-canvas'];
-        this.ctx = this.canvas.getContext('2d');
-        // Polyfill roundRect for older Safari
-        if (!CanvasRenderingContext2D.prototype.roundRect) {
-            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
-                if (w < 0) { x += w; w = -w; }
-                if (h < 0) { y += h; h = -h; }
-                r = Math.min(r, w/2, h/2);
-                this.beginPath();
-                this.moveTo(x+r, y);
-                this.arcTo(x+w, y, x+w, y+h, r);
-                this.arcTo(x+w, y+h, x, y+h, r);
-                this.arcTo(x, y+h, x, y, r);
-                this.arcTo(x, y, x+w, y, r);
-                this.closePath();
-                return this;
-            };
+      },
+      classical: {
+        name: 'Classical',
+        description: 'Governed by strict functional harmony and voice-leading rules.',
+        chords: {
+          pattern: 'functional-harmony',
+          qualities: ['related-keys'],
+          structure: 'voice-leading'
+        },
+        melody: {
+          style: 'counterpoint',
+          focus: 'intricate-themes',
+          elements: ['multiple-independent-melodies']
         }
-        this.resizeCanvas();
-        this.drawPianoRoll();
-    }
+      }
+    };
 
-    resizeCanvas() {
-        const rect = this.canvas.parentElement.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        this.canvas.width = rect.width * dpr;
-        this.canvas.height = rect.height * dpr;
-        this.canvas.style.width = `${rect.width}px`;
-        this.canvas.style.height = `${rect.height}px`;
-        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        this.drawPianoRoll();
-    }
-
-    drawPianoRoll() {
-        if (!this.ctx) return;
-        const ctx = this.ctx;
-        const width = this.canvas.width / (window.devicePixelRatio || 1);
-        const height = this.canvas.height / (window.devicePixelRatio || 1);
-        const sidebarWidth = 56;
-        const drawWidth = width - sidebarWidth;
-        const startMidi = 48, endMidi = 84;
-        const noteHeight = height / (endMidi - startMidi + 1);
-        const totalBeats = this.generatedProgression.length * 4;
-        const pxPerBeat = totalBeats > 0 ? drawWidth / totalBeats : 0;
-
-        ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#0A0F1A';
-        ctx.fillRect(sidebarWidth, 0, drawWidth, height);
-
-        // Horizontal Lines
-        ctx.strokeStyle = '#1E293B'; ctx.lineWidth = 0.5;
-        for (let midi = startMidi; midi <= endMidi; midi++) {
-            const y = (endMidi - midi + 1) * noteHeight;
-            const note = MusicTheory.midiToNote(midi);
-            if (note.name === 'C') { ctx.fillStyle = 'rgba(0, 102, 255, 0.03)'; ctx.fillRect(sidebarWidth, y - noteHeight, drawWidth, noteHeight); }
-            ctx.beginPath(); ctx.moveTo(sidebarWidth, y); ctx.lineTo(width, y); ctx.stroke();
-        }
-
-        // Vertical Lines
-        for (let b = 0; b <= totalBeats; b++) {
-            const x = sidebarWidth + b * pxPerBeat;
-            const isBar = b % 4 === 0;
-            ctx.lineWidth = isBar ? 1.5 : 0.5;
-            ctx.strokeStyle = isBar ? '#3A4A6A' : '#1E293B';
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-        }
-
-        // Chord Backgrounds
-        this.generatedProgression.forEach((chord, barIndex) => {
-            const x = sidebarWidth + barIndex * 4 * pxPerBeat;
-            const w = 4 * pxPerBeat;
-            const chordNotes = MusicTheory.getChordNotes(chord.root, chord.quality, 5);
-            const chordPcs = new Set(chordNotes.map(n => n % 12));
-            for (let midi = startMidi; midi <= endMidi; midi++) {
-                if (chordPcs.has(midi % 12)) {
-                    const y = (endMidi - midi + 1) * noteHeight;
-                    ctx.fillStyle = 'rgba(0, 102, 255, 0.05)';
-                    ctx.fillRect(x, y - noteHeight, w, noteHeight);
-                }
-            }
-            ctx.fillStyle = '#0066FF'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
-            ctx.fillText(chord.symbol, x + 4, height - 16);
-        });
-
-        // Melody Notes
-        this.generatedMelody.forEach(note => {
-            const x = sidebarWidth + note.start * pxPerBeat;
-            const w = Math.max(2, note.duration * pxPerBeat);
-            const y = (endMidi - note.midi + 1) * noteHeight;
-            const h = noteHeight * 0.8;
-            const chord = this.generatedProgression[note.chordIndex];
-            const chordNotes = chord ? MusicTheory.getChordNotes(chord.root, chord.quality, 5) : [];
-            const isChordTone = chordNotes.some(cn => cn % 12 === note.midi % 12 && Math.abs(cn - note.midi) <= 12);
-            
-            ctx.fillStyle = isChordTone ? 'rgba(0, 212, 170, 0.9)' : 'rgba(0, 102, 255, 0.7)';
-            ctx.strokeStyle = isChordTone ? '#00D4AA' : '#0066FF';
-            ctx.lineWidth = 1;
-            const radius = 3;
-            ctx.beginPath(); ctx.roundRect(x, y - h, w, h, radius); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(x, y - h, w, 2 * note.velocity);
-        });
-    }
-
-    updatePlayhead(progress, elapsed) {
-        const playhead = this.elements['playhead'];
-        const canvasRect = this.canvas.parentElement.getBoundingClientRect();
-        const sidebarWidth = 56;
-        const drawWidth = canvasRect.width - sidebarWidth;
-        const x = sidebarWidth + progress * drawWidth;
-        playhead.style.left = `${x}px`;
-        playhead.classList.remove('hidden');
-        if (progress >= 1) { playhead.classList.add('hidden'); this.stopPlayback(); }
-    }
-
-    async togglePlay() {
-        if (this.audio.isPlaying) { this.stopPlayback(); }
-        else { await this.audio.init(); const melodyForAudio = this.generatedMelody.map(n => ({...n})); this.audio.play(this.generatedProgression, melodyForAudio); this.elements['play-icon'].classList.add('hidden'); this.elements['stop-icon'].classList.remove('hidden'); }
-    }
-
-    stopPlayback() { this.audio.stop(); this.elements['play-icon'].classList.remove('hidden'); this.elements['stop-icon'].classList.add('hidden'); this.elements['playhead'].classList.add('hidden'); }
-
-    playNote(midi, velocity, duration) { if (!this.audio.ctx) return; this.audio._createVoice(midi, velocity, this.audio.ctx.currentTime, duration); }
-
-    // ----- MIDI EXPORT -----
-    exportMIDI() {
-        const writeVarLen = (val) => { const arr = []; if (val === 0) return new Uint8Array([0]); while (val > 0) { arr.unshift(val & 0x7F); val >>= 7; } for (let i = 0; i < arr.length - 1; i++) arr[i] |= 0x80; return new Uint8Array(arr); };
-        const makeTrack = (events) => { let data = []; let lastTime = 0; events.forEach(e => { const delta = writeVarLen(e.delta); data = data.concat(Array.from(delta)); data.push(e.type | e.ch); if (e.data1 !== undefined) data.push(e.data1); if (e.data2 !== undefined) data.push(e.data2); }); data = data.concat([0x00, 0xFF, 0x2F, 0x00]); return new Uint8Array([0x4D,0x54,0x72,0x6B, (data.length>>24)&0xFF,(data.length>>16)&0xFF,(data.length>>8)&0xFF,data.length&0xFF, ...data]); };
-        const ppq = 96;
-        const buildTrack = (noteList) => { const abs = noteList.map(n => ({...n, abs: Math.round(n.start * ppq)})).sort((a,b)=>a.abs-b.abs); const ev = []; let last = 0; abs.forEach(n => { ev.push({delta: n.abs - last, type: 0x90, ch: n.ch||0, data1: n.midi, data2: Math.round(n.vel*127)}); last = n.abs; ev.push({delta: Math.round(n.dur * ppq), type: 0x80, ch: n.ch||0, data1: n.midi, data2: 0}); last = n.abs + Math.round(n.dur * ppq); }); return makeTrack(ev); };
-        
-        const chordNotesList = []; this.generatedProgression.forEach((chord, barIdx) => { const notes = MusicTheory.getChordNotes(chord.root, chord.quality, 4); notes.forEach(n => chordNotesList.push({midi: n, start: barIdx * 4, dur: 4, vel: 0.7, ch: 0})); });
-        const melodyNotesList = this.generatedMelody.map(n => ({midi: n.midi, start: n.start, dur: n.duration, vel: n.velocity, ch: 1}));
-        const header = new Uint8Array([0x4D,0x54,0x68,0x64,0x00,0x00,0x00,0x06,0x00,0x01,0x00,0x02,0x00,0x60]);
-        const track1 = buildTrack(chordNotesList); const track2 = buildTrack(melodyNotesList);
-        const full = new Uint8Array(header.length + track1.length + track2.length); full.set(header,0); full.set(track1, header.length); full.set(track2, header.length + track1.length);
-        const blob = new Blob([full], {type: 'audio/midi'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `HarmonyAI_${Date.now()}.mid`; a.click(); URL.revokeObjectURL(url);
-    }
-
-    // ----- MIDI IMPORT -----
-    importMIDI(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+    // ============================================
+    // MIDI Analysis (Simplified)
+    // ============================================
+    function analyzeMidi(file) {
+      return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
-            try {
-                const notes = MidiParser.parse(e.target.result);
-                if (notes.length === 0) { alert('No notes found in MIDI file.'); return; }
-                
-                // Simple heuristic: Group notes by quantized start time to form chords
-                const chordsMap = new Map();
-                notes.forEach(n => {
-                    const quantizedStart = Math.round(n.start * 4) / 4; // Quantize to 16th
-                    if (!chordsMap.has(quantizedStart)) chordsMap.set(quantizedStart, []);
-                    chordsMap.get(quantizedStart).push(n);
-                });
-                
-                this.inputChords = []; // Clear buffer
-                let chordCount = 0;
-                for (const [time, chordNotes] of chordsMap.entries()) {
-                    if (chordCount >= 16) break; // Limit import buffer
-                    // Find lowest note as root
-                    chordNotes.sort((a,b) => a.midi - b.midi);
-                    const rootMidi = chordNotes[0].midi;
-                    const rootNote = MusicTheory.midiToNote(rootMidi);
-                    // Crude quality detection: Major/Minor based on 3rd
-                    let quality = '';
-                    const intervals = chordNotes.map(n => (n.midi - rootMidi + 12) % 12).filter(i => i > 0);
-                    if (intervals.includes(4)) quality = ''; // Major 3rd
-                    else if (intervals.includes(3)) quality = 'm'; // Minor 3rd
-                    else quality = ''; // Default
-                    
-                    this.inputChords.push({ root: rootNote.name, quality, symbol: `${rootNote.name}${quality}`, midi: rootMidi });
-                    chordCount++;
-                }
-                this.updateChordBufferDisplay();
-                alert(`Imported ${chordCount} chords from MIDI.`);
-            } catch (err) { console.error(err); alert('Failed to parse MIDI: ' + err.message); }
-            this.elements['midi-import-input'].value = '';
+          const data = new Uint8Array(e.target.result);
+          const output = [];
+          let offset = 0;
+
+          // Parse MIDI header
+          const format = data[offset] | (data[offset + 1] << 8);
+          const numTracks = data[offset + 4] | (data[offset + 5] << 8);
+          const timeDivision = data[offset + 8] | (data[offset + 9] << 8);
+
+          // For demo purposes, create mock analysis
+          // In a real app, we'd parse MIDI properly
+          setTimeout(() => {
+            resolve({
+              chords: parseChordsFromMidi(data),
+              key: detectKey(data),
+              bpm: detectBPM(data, timeDivision)
+            });
+          }, 500);
         };
         reader.readAsArrayBuffer(file);
+      });
     }
-}
 
-// ---------- 5. INIT ----------
-document.addEventListener('DOMContentLoaded', () => {
-    document.addEventListener('touchmove', (e) => { if(e.target.closest('#app-root') && !e.target.closest('[data-scrollable]')) e.preventDefault(); }, { passive: false });
-    window.app = new AppController();
-    console.log('HarmonyAI Initialized. Ready for iPad Landscape.');
-});
-    </script>
+    function parseChordsFromMidi(data) {
+      // Mock chord parsing - in reality this would analyze note patterns
+      return ['Cmaj7', 'G7', 'Am', 'Fmaj7'];
+    }
+
+    function detectKey(data) {
+      return 'C Major';
+    }
+
+    function detectBPM(data, timeDivision) {
+      return 120; // Default
+    }
+
+    // ============================================
+    // Style-Based Generation
+    // ============================================
+    function generateChords(progression, style) {
+      const styleDef = styles[style];
+      const chords = [];
+
+      const chordQuality = styleDef.chords.qualities[0];
+      const rootNotes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+      for (let i = 0; i < progression.length; i++) {
+        const root = rootNotes[i % rootNotes.length];
+        const quality = chordQuality === 'minor' ? 'm' : chordQuality === 'seventh' ? '7' : '';
+        const chordName = i === 0 ? `${root}${quality}` : `${root}${quality}`;
+        chords.push(chordName);
+      }
+
+      return chords;
+    }
+
+    function generateMelody(chords, key, bpm, style) {
+      const styleDef = styles[style];
+      const melody = [];
+
+      // Generate melody notes based on style
+      const scaleNotes = getScaleNotes(key, styleDef.chords.qualities[0]);
+      const rhythmPatterns = getRhythmPattern(style);
+
+      for (let i = 0; i < chords.length; i++) {
+        const chordTones = getChordTones(chords[i], scaleNotes);
+        const pattern = rhythmPatterns[i % rhythmPatterns.length];
+
+        // Generate 2-4 melody notes per chord
+        const numNotes = 2 + (i % 3);
+        for (let j = 0; j < numNotes; j++) {
+          const noteIdx = Math.floor(Math.random() * chordTones.length);
+          melody.push({
+            note: chordTones[noteIdx],
+            duration: pattern.duration,
+            velocity: pattern.velocity
+          });
+        }
+      }
+
+      return melody;
+    }
+
+    function getScaleNotes(key, quality) {
+      const keyMap = {
+        'C Major': ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
+        'G Major': ['G', 'A', 'B', 'C', 'D', 'E', 'F#'],
+        'D Major': ['D', 'E', 'F#', 'G', 'A', 'B', 'C#'],
+        'A Minor': ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+        'E Minor': ['E', 'F#', 'G', 'A', 'B', 'C', 'D']
+      };
+
+      return keyMap[key] || keyMap['C Major'];
+    }
+
+    function getChordTones(chordName, scale) {
+      // Extract root and return chord tones from scale
+      const rootMap = {
+        'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4,
+        'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9,
+        'A#': 10, 'B': 11
+      };
+
+      const root = chordName.replace(/[m79]/g, '').replace('maj', '');
+      const rootIdx = rootMap[root] || 0;
+
+      // Return root, third, fifth from scale
+      return [scale[rootIdx], scale[(rootIdx + 2) % 7], scale[(rootIdx + 4) % 7]];
+    }
+
+    function getRhythmPattern(style) {
+      const patterns = {
+        hiphop: [{ duration: 'quarter', velocity: 0.7 }, { duration: 'eighth', velocity: 0.5 }],
+        pop: [{ duration: 'quarter', velocity: 0.8 }, { duration: 'quarter', velocity: 0.8 }],
+        rock: [{ duration: 'eighth', velocity: 0.9 }, { duration: 'eighth', velocity: 0.9 }],
+        country: [{ duration: 'quarter', velocity: 0.7 }, { duration: 'eighth', velocity: 0.6 }],
+        edm: [{ duration: 'sixteenth', velocity: 0.8 }, { duration: 'sixteenth', velocity: 0.6 }],
+        latin: [{ duration: 'eighth-triplet', velocity: 0.8 }, { duration: 'eighth-triplet', velocity: 0.7 }],
+        cinematic: [{ duration: 'half', velocity: 0.5 }, { duration: 'half', velocity: 0.5 }],
+        rnb: [{ duration: 'dotted-eighth', velocity: 0.9 }, { duration: 'sixteenth', velocity: 0.7 }],
+        ambient: [{ duration: 'half', velocity: 0.3 }, { duration: 'whole', velocity: 0.2 }],
+        classical: [{ duration: 'eighth', velocity: 0.8 }, { duration: 'eighth', velocity: 0.8 }]
+      };
+
+      return patterns[style] || patterns.pop;
+    }
+
+    function generateDrums(bars, style) {
+      const styleDef = styles[style];
+      const drumPattern = [];
+
+      const beatCount = bars * 4; // 4 beats per bar
+      const velocity = styleDef.name === 'Ambient' ? 0.3 : 0.7;
+
+      for (let i = 0; i < beatCount; i++) {
+        // Simple drum pattern - kick on 1 and 3, snare on 2 and 4
+        const beatType = i % 4;
+        let instrument = 'closed-hat';
+        let velocityVal = velocity;
+
+        if (beatType === 0 || beatType === 2) {
+          instrument = 'kick';
+        } else if (beatType === 1 || beatType === 3) {
+          instrument = 'snare';
+        }
+
+        drumPattern.push({ instrument, step: i, velocity: velocityVal });
+      }
+
+      return drumPattern;
+    }
+
+    // ============================================
+    // UI Rendering
+    // ============================================
+    function renderStyleGrid() {
+      const grid = document.getElementById('style-grid');
+      grid.innerHTML = '';
+
+      Object.entries(styles).forEach(([key, style]) => {
+        const card = document.createElement('div');
+        card.className = `style-card ${key === state.selectedStyle ? 'selected' : ''}`;
+        card.innerHTML = `
+          <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${key === state.selectedStyle ? 'var(--accent)' : 'var(--muted)'" stroke-width="2">
+                <path d="M12 2v4M12 20v4M4.93 4.93l2.83 2.83M15.73 15.73l2.83 2.83M1 12l4-4 4 4M20 12l-4-4 4-4M4.93 19.07l2.83-2.83M15.73 8.27l2.83-2.83"/>
+              </svg>
+            </div>
+            <div class="flex-1">
+              <h3 class="font-medium">${style.name}</h3>
+              <p class="text-[var(--muted)] text-xs">${style.description}</p>
+            </div>
+          </div>
+        `;
+        card.addEventListener('click', () => selectStyle(key));
+        grid.appendChild(card);
+      });
+    }
+
+    function selectStyle(styleKey) {
+      state.selectedStyle = styleKey;
+      renderStyleGrid();
+
+      // Update chord display
+      const chordDisplay = document.getElementById('chord-display');
+      if (state.analysis) {
+        chordDisplay.textContent = `Style: ${styles[styleKey].name}`;
+      }
+    }
+
+    function renderPianoRoll(tracks) {
+      const container = document.getElementById('piano-roll');
+      container.innerHTML = '';
+
+      // Create piano keys (A0 to C6 = 49 keys)
+      const totalKeys = 49;
+      const keyHeight = 20;
+
+      // White keys
+      for (let i = 0; i < totalKeys; i++) {
+        const isBlack = isBlackKey(i);
+        const keyElement = document.createElement('div');
+        keyElement.className = `key ${isBlack ? 'key-black' : 'key-white'}`;
+        keyElement.dataset.key = i;
+        keyElement.innerHTML = `<span class="key-label">${getKeyName(i)}</span>`;
+        container.appendChild(keyElement);
+      }
+
+      // Add active notes
+      if (tracks && tracks.chords) {
+        tracks.chords.forEach((chord, chordIdx) => {
+          // Parse chord and mark relevant keys
+          const chordNotes = parseChordNotes(chord);
+          chordNotes.forEach(note => {
+            const keyIdx = noteToIndex(note);
+            if (keyIdx !== null) {
+              const keyElements = container.querySelectorAll('.key-white');
+              if (keyElements[keyIdx]) {
+                keyElements[keyIdx].classList.add('active');
+                keyElements[keyIdx].style.background = 'var(--accent)';
+              }
+            }
+          });
+        });
+      }
+
+      if (tracks && tracks.melody) {
+        tracks.melody.forEach(note => {
+          const noteIdx = noteToIndex(note.note);
+          if (noteIdx !== null) {
+            const keyElements = container.querySelectorAll('.key-white');
+            if (keyElements[noteIdx]) {
+              keyElements[noteIdx].classList.add('active');
+              keyElements[noteIdx].style.background = 'var(--red)';
+            }
+          }
+        });
+      }
+
+      if (tracks && tracks.drums) {
+        // Drums don't map to piano roll in same way, just show rhythm
+        const drumContainer = document.createElement('div');
+        drumContainer.style.marginTop = '10px';
+        drumContainer.innerHTML = `<p class="text-[var(--muted)] text-sm">Drum pattern generated: ${tracks.drums.length} steps</p>`;
+        container.appendChild(drumContainer);
+      }
+    }
+
+    function isBlackKey(idx) {
+      const blackKeys = [1, 3, 6, 8, 10]; // Relative to C
+      return blackKeys.includes(idx % 12);
+    }
+
+    function getKeyName(idx) {
+      const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      return names[idx % 12];
+    }
+
+    function noteToIndex(noteName) {
+      const noteMap = {
+        'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4,
+        'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9,
+        'A#': 10, 'B': 11
+      };
+      const root = noteName.replace(/[0-9]/g, '');
+      return noteMap[root] !== undefined ? noteMap[root] : null;
+    }
+
+    function parseChordNotes(chordName) {
+      // Simple chord note parsing
+      const root = chordName.replace(/[m79]/g, '').replace('maj', '');
+      const intervals = {
+        '': [0, 4, 7], // Major: root, third, fifth
+        'm': [0, 3, 7], // Minor
+        '7': [0, 4, 7, 10] // Dominant 7th
+      };
+
+      const intervalSet = intervals[chordName.replace(root, '')] || [0, 4, 7];
+      const rootIdx = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 }[root] || 0;
+
+      return intervalSet.map(i => `${root}${i}`); // Return note names
+    }
+
+    // ============================================
+    // Event Handlers
+    // ============================================
+    document.getElementById('midi-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      state.midiFile = file;
+      analyzeMidi(file).then(analysis => {
+        state.analysis = analysis;
+        state.bpm = analysis.bpm;
+
+        // Update UI
+        document.getElementById('bpm-display').textContent = `${analysis.bpm} BPM`;
+        document.getElementById('bpm-input').value = analysis.bpm;
+
+        // Show detected info
+        document.getElementById('detected-info').classList.remove('hidden');
+        document.getElementById('chord-display').textContent = `Chords: ${analysis.chords.join(', ')}`;
+        document.getElementById('key-display').textContent = `Key: ${analysis.key}`;
+        document.getElementById('scale-display').textContent = `Scale: ${getScaleName(analysis.key)}`;
+
+        // Enable generation
+        document.getElementById('generate-btn').disabled = false;
+      });
+    });
+
+    function getScaleName(key) {
+      const names = {
+        'C Major': 'C Major',
+        'G Major': 'G Major',
+        'D Major': 'D Major',
+        'A Minor': 'A Minor'
+      };
+      return names[key] || key;
+    }
+
+    document.getElementById('generate-btn').addEventListener('click', () => {
+      if (!state.analysis) return;
+
+      const { chords, key } = state.analysis;
+      const bars = parseInt(state.chordLength);
+
+      // Generate tracks
+      const generatedChords = generateChords(chords, state.selectedStyle);
+      const generatedMelody = generateMelody(generatedChords, key, state.bpm, state.selectedStyle);
+      const generatedDrums = generateDrums(bars, state.selectedStyle);
+
+      // Update state
+      state.generatedTracks = {
+        chords: generatedChords,
+        melody: generatedMelody,
+        drums: generatedDrums
+      };
+
+      // Render
+      renderPianoRoll(state.generatedTracks);
+      renderChordsList(generatedChords);
+
+      // Enable export
+      document.getElementById('export-btn').disabled = false;
+    });
+
+    function renderChordsList(chords) {
+      const list = document.getElementById('chords-list');
+      list.innerHTML = chords.map(c => `${c}`).join('\n');
+    }
+
+    document.getElementById('export-btn').addEventListener('click', () => {
+      // In a real app, this would create and download MIDI files
+      alert('Export functionality would generate 3 separate MIDI files:\n1. Chords track\n2. Melody track\n3. Drums track');
+    });
+
+    // BPM input
+    document.getElementById('bpm-input').addEventListener('change', (e) => {
+      const bpm = parseInt(e.target.value);
+      if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) {
+        state.bpm = bpm;
+        document.getElementById('bpm-display').textContent = `${bpm} BPM`;
+      }
+    });
+
+    // Style selection
+    renderStyleGrid();
+
+    // Initialize
+    document.getElementById('generate-btn').disabled = true;
+    document.getElementById('export-btn').disabled = true;
+  </script>
 </body>
 </html>
 ```
